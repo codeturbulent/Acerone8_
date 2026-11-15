@@ -126,9 +126,9 @@ pip install pycryptodomex pyusb pyserial colorama
 > **Helio G85 Fix:** If `mtk.py` throws `struct.error: unpack requires a buffer of 4 bytes` when reading MEID, open `mtkclient/Library/mtk_preloader.py` and ensure `buf = self.usbread(4)` checks `if len(buf) == 4:` before calling `unpack(">I", buf)`.
 
 #### 3. Run the Partition Dump Command
-Execute the dump directly from inside the `mtkclient` directory:
+Execute the dump using the virtual environment's Python binary with `sudo` (so it accesses the installed dependencies and raw USB devices):
 ```bash
-sudo python3 mtk.py r boot_b,init_boot_b,vbmeta_b \
+sudo .venv/bin/python3 mtk.py r boot_b,init_boot_b,vbmeta_b \
     ../tablet_backup/boot_b.img,../tablet_backup/init_boot_b.img,../tablet_backup/vbmeta_b.img \
     --skipwdt
 ```

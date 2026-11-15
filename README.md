@@ -147,44 +147,71 @@ Because this device uses Android Generic Kernel Image (GKI) architecture:
    ```bash
    fastboot reboot
    ```
-4. Open the **Magisk** app. You will see:
+4. Verify root status via ADB:
+   ```bash
+   adb shell "su -c id"
+   # Output:
+   # uid=0(root) gid=0(root) groups=0(root) context=u:r:magisk:s0
    ```
-   Magisk Installed: 31.1 (31100)
-   ```
-   **Your Acer One 8 is now fully rooted!**
+   - **Magisk Version:** `31.1:MAGISK:R`
+   - **Root Context:** Unrestricted Magisk SELinux domain (`u:r:magisk:s0`).
 
 ---
 
-### Step 6: Removing Institutional Device Admin / MDM Locks
-With root access achieved, you can permanently disable or eliminate any background management policies:
+### Step 6: Removing Institutional Device Admin & Preventing Internet Auto-Enrollment (MDM)
 
-1. Open a root shell on your PC:
-   ```bash
-   adb shell
-   su
-   ```
-   *(Grant the root prompt on the tablet screen when it pops up).*
+On institutional / educational tablets (such as DgShakti / UP scheme), the moment you connect to Wi-Fi for the first time, Android contacts Google Zero-Touch and institutional servers to silently download the admin app and lock the device.
 
-2. Verify that there are no active device owners:
+We completely neutralize this before connecting to the internet:
+
+1. **Disable `ManagedProvisioning`:**
    ```bash
-   dpm list-owners
+   pm disable com.android.managedprovisioning
+   pm disable-user --user 0 com.android.managedprovisioning
+   ```
+   *`com.android.managedprovisioning` is the core Android system engine responsible for Zero-Touch enrollment and setting up Device Owners. With this disabled, Android cannot download or assign any Device Owner.*
+
+2. **Disable Vendor OTA (`com.chipc.update`):**
+   ```bash
+   pm disable com.chipc.update
+   pm disable-user --user 0 com.chipc.update
+   ```
+   *Disables background OEM updates to prevent remote configuration changes.*
+
+3. **Firewall `DeviceLockController` (UID 10184):**
+   ```bash
+   iptables -I OUTPUT -m owner --uid-owner 10184 -j DROP
+   ip6tables -I OUTPUT -m owner --uid-owner 10184 -j DROP
+   ```
+   *Adds kernel-level iptables rules that immediately drop any outgoing network packets from `com.android.devicelockcontroller`. Even if it tries to call home, all connection attempts are blocked.*
+
+4. **Permanent Magisk Boot Guard:**
+   Install a persistent startup service at `/data/adb/service.d/block_mdm.sh` on the tablet. It runs on every boot as root to enforce these rules, remove any policy files, and ensure the tablet remains 100% clean:
+   ```bash
+   adb shell "su -c 'cat << \"EOF\" > /data/adb/service.d/block_mdm.sh
+   #!/system/bin/sh
+   while [ \"\$(getprop sys.boot_completed)\" != \"1\" ]; do
+       sleep 2
+   done
+   pm disable com.android.managedprovisioning >/dev/null 2>&1
+   pm disable-user --user 0 com.android.managedprovisioning >/dev/null 2>&1
+   pm disable com.chipc.update >/dev/null 2>&1
+   pm disable-user --user 0 com.chipc.update >/dev/null 2>&1
+   DLC_UID=\$(pm list packages -U | grep com.android.devicelockcontroller | sed -n \"s/.*uid://p\")
+   if [ -n \"\$DLC_UID\" ]; then
+       iptables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
+       ip6tables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
+   fi
+   rm -f /data/system/device_owner_2.xml /data/system/device_policies.xml
+   EOF
+   chmod 755 /data/adb/service.d/block_mdm.sh
+   '"
    ```
 
-3. Disable the Android enterprise lock controller:
-   ```bash
-   pm disable-user --user 0 com.android.devicelockcontroller
-   ```
+---
 
-4. If any institutional enrollment app exists, uninstall or freeze it:
-   ```bash
-   pm uninstall --user 0 <package_name>
-   ```
-
-5. Delete device policy XML records (if persistent):
-   ```bash
-   rm -f /data/system/device_owner_2.xml
-   rm -f /data/system/device_policies.xml
-   ```
+### 🎉 Safe Internet Connection Achieved!
+With the above steps completed, you can now safely connect to Wi-Fi and the Internet. The tablet will function as a standard personal Android tablet with zero management policies, zero restrictions, and full root access.
 
 ---
 

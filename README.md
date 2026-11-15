@@ -40,7 +40,7 @@ flowchart TD
     H --> I["Pull Patched Image to PC via ADB"]
     I --> J["Flash Patched init_boot via Fastboot<br/>(fastboot flash init_boot_b magisk_patched.img)"]
     J --> K["Reboot & Verify Full Root (su)"]
-    K --> L["Neutralize Zero-Touch / Tectoro MDM<br/>(Run Step 6 ADB commands)"]
+    K --> L["Neutralize Zero-Touch / Tectoro MDM<br/>(Run ./block_mdm.sh)"]
     L --> M["🎉 Safe Personal Tablet with Root!"]
 ```
 
@@ -86,7 +86,7 @@ When dumping partitions with `mtkclient`, modern Helio G85 preloaders trigger tw
 > 
 > - **After 1st Reset (Factory Mode):** Skip the internet setup ("Set up offline" / "Skip").
 > - **After 2nd Reset (Bootloader Unlock):** Skip the internet setup again ("Set up offline" / "Skip").
-> - **Keep Wi-Fi OFF** until you have completed **Step 6 (Neutralizing Zero-Touch MDM)**.
+> - **Keep Wi-Fi OFF** until you have completed **Step 6 (`./block_mdm.sh`)**.
 
 ### Step 0: Clone This Repository (or Setup Workspace)
 Clone this repository to your computer so you have the reference files and a clean workspace:
@@ -262,7 +262,15 @@ The tablet's IMEI is registered to an enterprise portal (**Tectoro Pvt Ltd**). W
 
 ### How to permanently destroy this lock:
 
-With your tablet rooted, powered on, and connected to your PC with USB debugging enabled, run this complete copy-pasteable command block in your terminal:
+#### Option 1: Run the Automated Script (Easiest & Recommended)
+With your tablet rooted, powered on, and connected to your PC with USB debugging enabled, simply run:
+
+```bash
+./block_mdm.sh
+```
+
+#### Option 2: Run Directly in Terminal via ADB
+If you prefer running the commands manually without the script, execute this command block:
 
 ```bash
 adb shell "su -c '

@@ -1,239 +1,235 @@
-# Comprehensive Root & Unbrick Guide: Acer One 8 (T4-82L Gen 2)
+# 🔓 Acer One 8 (T4-82L Gen 2) Root, Zero-Touch / MDM Bypass & GSI Guide
 
-> **Complete guide to factory resetting, dumping firmware partitions via MediaTek BootROM (BROM), fixing mtkclient bugs on Helio G85, unlocking bootloader, patching with Magisk, and removing institutional Device Admin / MDM locks.**
+[![GitHub Repo](https://img.shields.io/badge/GitHub-codeturbulent%2FAcerone8__-blue?logo=github)](https://github.com/codeturbulent/Acerone8_)
+[![Device](https://img.shields.io/badge/Device-Acer%20One%208%20(T4--82L--G2)-green?logo=android)](https://github.com/codeturbulent/Acerone8_)
+[![Chipset](https://img.shields.io/badge/SoC-MediaTek%20Helio%20G85%20(MT6768%2FMT6769)-orange)](https://github.com/codeturbulent/Acerone8_)
+[![Magisk](https://img.shields.io/badge/Root-Magisk%20v31.1-red?logo=magisk)](https://github.com/topjohnwu/Magisk)
+[![MDM Status](https://img.shields.io/badge/MDM%20%2F%20Zero--Touch-Permanently%20Defeated-brightgreen)](#-defeating-the-tectoro-pvt-ltd--google-zero-touch-lock)
+
+> **The definitive, tested guide to factory resetting, low-level partition dumping, fixing MTK Preloader bugs, unlocking bootloader, rooting with Magisk (GKI), bypassing institutional Zero-Touch/MDM locks ("Your device at work" / Tectoro), and flashing LineageOS GSI ROMs on the Acer One 8 (T4-82L Gen 2).**
 
 ---
 
-## 📱 Hardware & Device Profile
+## 📑 Table of Contents
+1. [Device Architecture & Profile](#-device-architecture--profile)
+2. [Key Discoveries & Low-Level Fixes](#-key-discoveries--low-level-fixes)
+3. [Step 1: Hardware Factory Reset (MediaTek Factory Mode)](#step-1-hardware-factory-reset-mediatek-factory-mode)
+4. [Step 2: Bootloader Unlock](#step-2-bootloader-unlock)
+5. [Step 3: Zero-Risk Partition Dump via mtkclient](#step-3-zero-risk-partition-dump-via-mtkclient)
+6. [Step 4: GKI Magisk Patching](#step-4-gki-magisk-patching)
+7. [Step 5: Flashing via Fastboot](#step-5-flashing-via-fastboot)
+8. [Step 6: Defeating "Your device at work" / Tectoro Zero-Touch Lock](#-defeating-the-tectoro-pvt-ltd--google-zero-touch-lock)
+9. [Step 7: Flashing LineageOS / Custom GSI ROMs](#-flashing-lineageos--custom-gsi-roms)
+10. [Emergency Unbrick Failsafe](#-emergency-unbrick-failsafe)
+
+---
+
+## 📱 Device Architecture & Profile
 
 | Property | Value / Specification |
 | :--- | :--- |
 | **Model Name** | Acer One 8 (T4-82L-G2) |
 | **Board / Platform** | `tb8786p1_64_k66` |
 | **Processor (SoC)** | MediaTek MT6768 / MT6769 (Helio P65 / Helio G85 k68v1) |
-| **Storage Architecture** | eMMC (`CBHACG`, 64GB) |
-| **Active Slot Configuration** | A/B Partitioning (Current active: Slot `b`) |
-| **Android Architecture** | Android 14+ / Generic Kernel Image (GKI Kernel Header v4) |
+| **Partitioning Scheme** | A/B Dynamic Partitions (Slot `b` active) |
+| **Android Architecture** | Android 14+ / Generic Kernel Image (GKI Kernel v4) |
 | **Ramdisk Location** | `init_boot` partition (NOT inside `boot`) |
-| **Firmware Build Discovered** | `Acer_20261021` (Custom OEM / Educational distribution build) |
+| **Target Build Discovered** | `Acer_20261021` (Custom OEM / Educational distribution build) |
+| **Distribution Context** | Widely distributed under student empowerment schemes (DgShakti / UP Government / Tectoro Pvt Ltd) |
 
 ---
 
-## 🔍 Key Discoveries & Pitfalls Solved
+## 🔍 Key Discoveries & Low-Level Fixes
 
-### 1. The Missing "Wipe Data / Factory Reset" in Recovery
-* **The Problem:** The standard stock Android recovery menu on this tablet **deliberately strips out** the "Wipe data / factory reset" option to prevent students/users from bypassing institutional enrollment.
-* **The Fastboot Blocker:** Running `fastboot -w` or `fastboot erase userdata` failed with:
-  ```
-  FAILED (remote: 'not allowed in locked state')
-  ```
-* **The Solution:** MediaTek Factory Mode (`Power + Volume Down` key combination) has an engineering reset option titled **`Clear Storage`** (or `Clear eMMC`). Selecting this performs a clean hardware-level factory reset.
+### 1. Missing "Wipe Data / Factory Reset" in Recovery
+Institutional builds remove the standard recovery wipe option to prevent MDM removal. Fastboot wipe (`fastboot -w`) is blocked in locked state.
+- **The Solution:** MediaTek Factory Mode (`Power + Volume Down`) contains an engineering menu with **`Clear Storage`** (or `Clear eMMC`).
 
-### 2. The Danger of Internet Stock ROMs
-* The tablet runs custom build `Acer_20261021`. Flashing generic ROMs found on file archives often results in broken touchscreen, disabled Wi-Fi/Bluetooth, or hard bootloops due to kernel/module version mismatches.
-* **The Safe Solution:** Extract the tablet's **exact live partitions** directly over USB using low-level MediaTek BootROM / Preloader mode before modifying anything.
+### 2. The Custom Build Danger (`Acer_20261021`)
+Flashing random stock ROMs from the internet causes bootloops, broken Wi-Fi, or unresponsive touchscreens due to kernel/touch module mismatches.
+- **The Solution:** Always dump the tablet's **exact live partitions** directly over USB before flashing anything.
 
-### 3. MediaTek Helio G85 `mtkclient` Bugs & Patches
-During partition dumping with `mtkclient`, two critical bugs were encountered on this modern SoC:
-1. **Watchdog Register Lock (`USBError 5`):**
-   * Modern MediaTek preloaders block host computers from modifying `SetReg_DisableWatchDogTimer`.
-   * **Fix:** Use `--skipwdt` and wrap the watchdog register call with a `try...except` block in `mtk_preloader.py`.
-2. **Missing 4-Byte MEID Crash (`struct.error`):**
-   * Modern preloaders return 0 bytes when queried for legacy MEID IDs. `unpack(">I", self.usbread(4))` crashed with `struct.error: unpack requires a buffer of 4 bytes`.
-   * **Fix:** Check buffer length (`len(buf) == 4`) before calling `unpack`.
+### 3. MediaTek Helio G85 Preloader Bugs & Fixes
+When dumping partitions with `mtkclient`, modern Helio G85 preloaders trigger two crashes:
+- **Watchdog Register Lock (`USBError 5`):** Use `--skipwdt` and wrap the watchdog write in `try...except` in `mtk_preloader.py`.
+- **Missing 4-Byte MEID Crash (`struct.error: unpack requires a buffer of 4 bytes`):** Modern preloaders return 0 bytes for MEID. The script must check buffer length (`len(buf) == 4`) before unpacking.
 
 ---
 
 ## 🛠️ Step-by-Step Walkthrough
 
-### Step 1: Factory Reset via MediaTek Factory Mode
+### Step 1: Hardware Factory Reset (MediaTek Factory Mode)
 1. Power the tablet completely **OFF**.
 2. Press and hold **Power + Volume Down**.
-3. Release the keys once the MediaTek test menu appears.
+3. Release both keys when the Chinese/English test menu appears.
 4. Use **Volume Down** to navigate to **Clear Storage**.
-5. Press the **Power button** (or Volume Up) to confirm.
-6. The storage will format, and the tablet will reboot fresh.
+5. Press the **Power button** (or Volume Up) to confirm. The tablet formats and reboots fresh.
 
 ---
 
-### Step 2: Unlock the Bootloader
-1. Complete the initial Android offline setup.
-2. Go to **Settings > About tablet** and tap **Build number** 7 times to enable Developer Options.
-3. Open **Settings > System > Developer options**:
-   - Enable **OEM unlocking**.
-   - Enable **USB debugging**.
-4. Connect the tablet to your PC and reboot to Fastboot:
+### Step 2: Bootloader Unlock
+1. Go through initial offline setup (do NOT connect to Wi-Fi yet).
+2. In **Settings > About tablet**, tap **Build number** 7 times.
+3. In **Settings > System > Developer options**:
+   - Toggle **OEM unlocking** -> ON.
+   - Toggle **USB debugging** -> ON.
+4. Connect to PC and reboot to Fastboot:
    ```bash
    adb reboot bootloader
    ```
-5. Unlock the bootloader:
+5. Unlock bootloader:
    ```bash
    fastboot flashing unlock
    ```
-6. Confirm the unlock on the tablet screen with the **Volume Up** button.
-7. Verify the unlock status:
+6. Press **Volume Up** on the tablet to confirm. Check unlock status:
    ```bash
    fastboot getvar unlocked
-   # Should report: unlocked: yes
+   # Result: unlocked: yes
    ```
-8. Reboot back into Android:
+7. Reboot:
    ```bash
    fastboot reboot
    ```
 
 ---
 
-### Step 3: Zero-Risk Partition Dump via MediaTek Preloader
-To guarantee safety against bricking, dump your live stock partitions (`boot_b`, `init_boot_b`, and `vbmeta_b`):
-
-1. Install `mtkclient` and dependencies:
+### Step 3: Zero-Risk Partition Dump via mtkclient
+1. Clone `mtkclient` and install dependencies:
    ```bash
    git clone https://github.com/bkerler/mtkclient
    cd mtkclient
-   python3 -m venv .venv
-   source .venv/bin/activate
+   python3 -m venv .venv && source .venv/bin/activate
    pip install pycryptodomex pyusb pyserial colorama
    ```
-2. Run the dump command:
+2. Run the dump script:
    ```bash
-   sudo python3 mtk.py r boot_b,init_boot_b,vbmeta_b \
-       ../tablet_backup/boot_b.img,../tablet_backup/init_boot_b.img,../tablet_backup/vbmeta_b.img \
-       --skipwdt
+   sudo ./scripts/dump_backup.sh
    ```
-3. When prompted (`Waiting for PreLoader VCOM`):
-   - Power off the tablet.
-   - Plug the USB cable in **without pressing any buttons** (or hold **Volume Up** only).
-4. The tool uploads the DA and dumps all partitions to `../tablet_backup/`.
-5. **Keep an untouched copy** of these images in a safe folder as an immutable unbrick failsafe!
+3. When prompted, connect the powered-off tablet without pressing any buttons.
+4. The tool dumps `boot_b.img`, `init_boot_b.img`, and `vbmeta_b.img` into `tablet_backup/`.
+5. Keep an untouched copy in `tablet_backup/STOCK_ORIGINALS/`.
 
 ---
 
-### Step 4: Patching with Magisk
-Because this device uses Android Generic Kernel Image (GKI) architecture:
-- `boot.img` contains only the Linux kernel.
-- **`init_boot.img`** contains the ramdisk and must be patched.
+### Step 4: GKI Magisk Patching
+*Because this device uses GKI architecture, you must patch `init_boot`, NOT `boot`.*
 
-1. Power on the tablet into Android with USB Debugging enabled.
-2. Push `init_boot_b.img` to the tablet:
+1. Push `init_boot_b.img` to the tablet:
    ```bash
-   adb push ../tablet_backup/init_boot_b.img /sdcard/Download/init_boot.img
+   adb push tablet_backup/init_boot_b.img /sdcard/Download/init_boot.img
    ```
-3. Install the official Magisk APK (v31.1+):
+2. Install the latest [Magisk v31.1+ APK](https://github.com/topjohnwu/Magisk/releases):
    ```bash
    adb install -r Magisk.apk
    ```
-4. Open the **Magisk** app on the tablet:
-   - Tap **Install** (top card).
-   - Choose **Select and Patch a File**.
-   - Navigate to `/sdcard/Download/` and select **`init_boot.img`**.
+3. Open Magisk on the tablet:
+   - Tap **Install** > **Select and Patch a File**.
+   - Select `/sdcard/Download/init_boot.img`.
    - Tap **LET'S GO!**.
-5. Once it completes, pull the patched file back to your PC:
+4. Pull the patched file back to your PC:
    ```bash
-   adb pull /sdcard/Download/magisk_patched-*.img ../tablet_backup/magisk_patched.img
+   adb pull /sdcard/Download/magisk_patched-*.img tablet_backup/magisk_patched.img
    ```
 
 ---
 
-### Step 5: Flashing Patched Image via Fastboot
-1. Reboot the tablet into bootloader:
+### Step 5: Flashing via Fastboot
+1. Reboot to bootloader:
    ```bash
    adb reboot bootloader
    ```
-2. Flash the patched image to the active `init_boot` slot:
+2. Flash the patched image:
    ```bash
-   fastboot flash init_boot_b ../tablet_backup/magisk_patched.img
-   ```
-3. Reboot into Android:
-   ```bash
+   fastboot flash init_boot_b tablet_backup/magisk_patched.img
    fastboot reboot
    ```
-4. Verify root status via ADB:
+3. Verify root via ADB:
    ```bash
    adb shell "su -c id"
-   # Output:
+   # Expected output:
    # uid=0(root) gid=0(root) groups=0(root) context=u:r:magisk:s0
    ```
-   - **Magisk Version:** `31.1:MAGISK:R`
-   - **Root Context:** Unrestricted Magisk SELinux domain (`u:r:magisk:s0`).
 
 ---
 
-### Step 6: Removing Institutional Device Admin & Preventing Internet Auto-Enrollment (MDM)
+## 🛡️ Defeating the "Tectoro Pvt Ltd" / Google Zero-Touch Lock
 
-On institutional / educational tablets (such as DgShakti / UP scheme), the moment you connect to Wi-Fi for the first time, Android contacts Google Zero-Touch and institutional servers to silently download the admin app and lock the device.
+### What happens when connecting to Wi-Fi:
+The tablet's IMEI is registered to an enterprise portal (**Tectoro Pvt Ltd**). When Google Play Services (GMS) connects to the internet, it receives a Zero-Touch payload commanding it to install Android Device Policy and force a wipe countdown (*"Your device will automatically reset in 1 hour 55 minutes"*).
 
-We completely neutralize this before connecting to the internet:
+### How to permanently destroy this lock:
 
-1. **Disable `ManagedProvisioning`:**
+Run our automated script:
+```bash
+./scripts/block_mdm.sh
+```
+
+Or execute directly via ADB root:
+
+1. **Disable Zero-Touch Factory Reset & Network Tasks in Google Play Services:**
    ```bash
-   pm disable com.android.managedprovisioning
-   pm disable-user --user 0 com.android.managedprovisioning
+   adb shell "su -c 'pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity'"
+   adb shell "su -c 'pm disable com.google.android.gms/.enterprise.zerotouch.businesslogic.ZeroTouchGmsTaskService'"
    ```
-   *`com.android.managedprovisioning` is the core Android system engine responsible for Zero-Touch enrollment and setting up Device Owners. With this disabled, Android cannot download or assign any Device Owner.*
 
-2. **Disable Vendor OTA (`com.chipc.update`):**
+2. **Make the Zero-Touch Configuration File Immutable:**
    ```bash
-   pm disable com.chipc.update
-   pm disable-user --user 0 com.chipc.update
+   adb shell "su -c 'echo -n \"\" > /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml'"
+   adb shell "su -c 'chmod 444 /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml'"
+   adb shell "su -c 'chattr +i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml'"
    ```
-   *Disables background OEM updates to prevent remote configuration changes.*
+   *The `+i` (immutable) attribute prevents even Google Play Services or system services from ever writing a reset command or token again.*
 
-3. **Firewall `DeviceLockController` (UID 10184):**
+3. **Disable Android Enterprise Managed Provisioning & Vendor OTA:**
    ```bash
-   iptables -I OUTPUT -m owner --uid-owner 10184 -j DROP
-   ip6tables -I OUTPUT -m owner --uid-owner 10184 -j DROP
+   adb shell "su -c 'pm disable com.android.managedprovisioning; pm disable-user --user 0 com.android.managedprovisioning'"
+   adb shell "su -c 'pm disable com.chipc.update; pm disable-user --user 0 com.chipc.update'"
    ```
-   *Adds kernel-level iptables rules that immediately drop any outgoing network packets from `com.android.devicelockcontroller`. Even if it tries to call home, all connection attempts are blocked.*
 
-4. **Permanent Magisk Boot Guard:**
-   Install a persistent startup service at `/data/adb/service.d/block_mdm.sh` on the tablet. It runs on every boot as root to enforce these rules, remove any policy files, and ensure the tablet remains 100% clean:
+4. **Firewall DeviceLockController at Kernel Level:**
    ```bash
-   adb shell "su -c 'cat << \"EOF\" > /data/adb/service.d/block_mdm.sh
-   #!/system/bin/sh
-   while [ \"\$(getprop sys.boot_completed)\" != \"1\" ]; do
-       sleep 2
-   done
-   pm disable com.android.managedprovisioning >/dev/null 2>&1
-   pm disable-user --user 0 com.android.managedprovisioning >/dev/null 2>&1
-   pm disable com.chipc.update >/dev/null 2>&1
-   pm disable-user --user 0 com.chipc.update >/dev/null 2>&1
-   DLC_UID=\$(pm list packages -U | grep com.android.devicelockcontroller | sed -n \"s/.*uid://p\")
-   if [ -n \"\$DLC_UID\" ]; then
-       iptables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
-       ip6tables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
-   fi
-   rm -f /data/system/device_owner_2.xml /data/system/device_policies.xml
-   EOF
-   chmod 755 /data/adb/service.d/block_mdm.sh
-   '"
+   DLC_UID=$(adb shell "pm list packages -U | grep com.android.devicelockcontroller | sed -n 's/.*uid://p'")
+   adb shell "su -c 'iptables -I OUTPUT -m owner --uid-owner $DLC_UID -j DROP; ip6tables -I OUTPUT -m owner --uid-owner $DLC_UID -j DROP'"
+   ```
+
+5. **Install Persistent Magisk Boot Service:**
+   The script in `scripts/block_mdm.sh` automatically installs `/data/adb/service.d/block_mdm.sh` so these protections run on every boot!
+
+---
+
+## ⚡ Flashing LineageOS / Custom GSI ROMs
+
+Because the tablet supports **Project Treble** and **Dynamic Partitions**, you can flash pure LineageOS GSIs without compiling from source:
+
+1. Download an **ARM64 A/B GSI** (e.g. [AndyCGYan's LineageOS GSI](https://github.com/AndyCGYan/lineage_build_unified/releases) - look for `arm64_bgN` with GApps or `arm64_bvN` vanilla).
+2. Extract the file to get `system.img`.
+3. Reboot to **Fastbootd** (Userspace Fastboot):
+   ```bash
+   adb reboot fastboot
+   ```
+4. Flash system image and format:
+   ```bash
+   fastboot flash system system.img
+   fastboot -w
+   fastboot reboot
    ```
 
 ---
 
-### 🎉 Safe Internet Connection Achieved!
-With the above steps completed, you can now safely connect to Wi-Fi and the Internet. The tablet will function as a standard personal Android tablet with zero management policies, zero restrictions, and full root access.
+## 🛟 Emergency Unbrick Failsafe
 
----
-
-## 🛟 Emergency Recovery / Unbrick Failsafe
-
-If you ever experience a bootloop or issue, restore the tablet to factory state in seconds using your original stock backup:
+If the device ever bootloops, restore the original untouched stock images in seconds:
 
 ```bash
-# If Fastboot is accessible:
-fastboot flash init_boot_b ../tablet_backup/STOCK_ORIGINALS/init_boot_b.img
-fastboot flash boot_b ../tablet_backup/STOCK_ORIGINALS/boot_b.img
+fastboot flash init_boot_b tablet_backup/STOCK_ORIGINALS/init_boot_b.img
+fastboot flash boot_b tablet_backup/STOCK_ORIGINALS/boot_b.img
 fastboot reboot
-
-# If device does not boot to Fastboot:
-# Use mtkclient in BROM mode to re-flash the original partitions:
-sudo python3 mtk.py w init_boot_b,boot_b \
-    ../tablet_backup/STOCK_ORIGINALS/init_boot_b.img,../tablet_backup/STOCK_ORIGINALS/boot_b.img \
-    --skipwdt
 ```
 
 ---
 
-## 📄 License & Credits
-- Created with [mtkclient](https://github.com/bkerler/mtkclient) by B. Kerler.
-- Magisk by [topjohnwu](https://github.com/topjohnwu/Magisk).
+## 🌟 Sharing & Contributing
+If this guide helped you recover or free your tablet, please give it a **⭐ Star** on GitHub and share the link in student and Android forums!
+
+- **Repository:** [https://github.com/codeturbulent/Acerone8_](https://github.com/codeturbulent/Acerone8_)
+- **Keywords:** Acer One 8, T4-82L, DgShakti Tablet, Tectoro Pvt Ltd, Swami Vivekananda Yuva Sashaktikaran Yojana, UP Free Tablet Yojana, MT6768, Helio G85, Zero-Touch Bypass, Magisk Root GKI.

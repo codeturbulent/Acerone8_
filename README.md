@@ -11,6 +11,7 @@
 ---
 
 ## 📑 Table of Contents
+0. [Step 0: Clone This Repository](#step-0-clone-this-repository)
 1. [Device Architecture & Profile](#-device-architecture--profile)
 2. [Key Discoveries & Low-Level Fixes](#-key-discoveries--low-level-fixes)
 3. [Step 1: Hardware Factory Reset (MediaTek Factory Mode)](#step-1-hardware-factory-reset-mediatek-factory-mode)
@@ -58,6 +59,16 @@ When dumping partitions with `mtkclient`, modern Helio G85 preloaders trigger tw
 
 ## 🛠️ Step-by-Step Walkthrough
 
+### Step 0: Clone This Repository
+First, clone this repository onto your computer so you have all the configuration files and helper scripts:
+
+```bash
+git clone https://github.com/codeturbulent/Acerone8_.git
+cd Acerone8_
+```
+
+---
+
 ### Step 1: Hardware Factory Reset (MediaTek Factory Mode)
 1. Power the tablet completely **OFF**.
 2. Press and hold **Power + Volume Down**.
@@ -94,20 +105,46 @@ When dumping partitions with `mtkclient`, modern Helio G85 preloaders trigger tw
 ---
 
 ### Step 3: Zero-Risk Partition Dump via mtkclient
-1. Clone `mtkclient` and install dependencies:
-   ```bash
-   git clone https://github.com/bkerler/mtkclient
-   cd mtkclient
-   python3 -m venv .venv && source .venv/bin/activate
-   pip install pycryptodomex pyusb pyserial colorama
-   ```
-2. Run the dump script:
-   ```bash
-   sudo ./scripts/dump_backup.sh
-   ```
-3. When prompted, connect the powered-off tablet without pressing any buttons.
-4. The tool dumps `boot_b.img`, `init_boot_b.img`, and `vbmeta_b.img` into `tablet_backup/`.
-5. Keep an untouched copy in `tablet_backup/STOCK_ORIGINALS/`.
+*Do not skip this step! Dumping your tablet's exact live partitions is your 100% guarantee against bricking.*
+
+#### 1. Create the Backup Directories
+From your repository root (`Acerone8_/`), create the storage directory:
+```bash
+mkdir -p tablet_backup/STOCK_ORIGINALS
+```
+
+#### 2. Clone `mtkclient` & Set Up Environment
+```bash
+git clone https://github.com/bkerler/mtkclient
+cd mtkclient
+python3 -m venv .venv
+source .venv/bin/activate
+pip install pycryptodomex pyusb pyserial colorama
+```
+
+> [!NOTE]
+> **Helio G85 Fix:** If `mtk.py` throws `struct.error: unpack requires a buffer of 4 bytes` when reading MEID, open `mtkclient/Library/mtk_preloader.py` and ensure `buf = self.usbread(4)` checks `if len(buf) == 4:` before calling `unpack(">I", buf)`.
+
+#### 3. Run the Partition Dump Command
+Execute the dump directly from inside the `mtkclient` directory:
+```bash
+sudo python3 mtk.py r boot_b,init_boot_b,vbmeta_b \
+    ../tablet_backup/boot_b.img,../tablet_backup/init_boot_b.img,../tablet_backup/vbmeta_b.img \
+    --skipwdt
+```
+
+4. **Connect the Tablet:**
+   - Power off the tablet completely.
+   - When the terminal displays `Waiting for PreLoader VCOM...`, plug the USB cable in **without holding any buttons** (or hold **Volume Up** only).
+   - Keep it connected until all 3 partitions report `100.0% Read` and `All partitions were dumped`.
+
+#### 4. Save Immutable Copies of the Stock Originals
+Once the dump finishes, copy the untouched images into your backup archive and return to the main folder:
+```bash
+cp ../tablet_backup/*.img ../tablet_backup/STOCK_ORIGINALS/
+cd ..
+```
+*You now have `boot_b.img`, `init_boot_b.img`, and `vbmeta_b.img` safely stored in `tablet_backup/`!*
 
 ---
 

@@ -40,7 +40,7 @@ flowchart TD
     H --> I["Pull Patched Image to PC via ADB"]
     I --> J["Flash Patched init_boot via Fastboot<br/>(fastboot flash init_boot_b magisk_patched.img)"]
     J --> K["Reboot & Verify Full Root (su)"]
-    K --> L["Neutralize Zero-Touch / Tectoro MDM<br/>(Run block_mdm.sh service)"]
+    K --> L["Neutralize Zero-Touch / Tectoro MDM<br/>(Run Step 6 ADB commands)"]
     L --> M["🎉 Safe Personal Tablet with Root!"]
 ```
 
@@ -84,12 +84,12 @@ When dumping partitions with `mtkclient`, modern Helio G85 preloaders trigger tw
 > ### ⚠️ CRITICAL RULE: DO NOT CONNECT TO WI-FI / INTERNET YET!
 > On institutional tablets, the device's IMEI and serial number are registered with **Google Zero-Touch Enrollment**. Connecting to Wi-Fi before rooting will immediately trigger Google Play Services to download the management profile and lock your tablet with a wipe countdown.
 > 
-> - **After 1st Reset (Factory Mode):** Skip the internet setup ("Set up offline").
-> - **After 2nd Reset (Bootloader Unlock):** Skip the internet setup again ("Set up offline").
-> - **Keep Wi-Fi OFF** until you have completed **Step 6 (`block_mdm.sh`)**.
+> - **After 1st Reset (Factory Mode):** Skip the internet setup ("Set up offline" / "Skip").
+> - **After 2nd Reset (Bootloader Unlock):** Skip the internet setup again ("Set up offline" / "Skip").
+> - **Keep Wi-Fi OFF** until you have completed **Step 6 (Neutralizing Zero-Touch MDM)**.
 
-### Step 0: Clone This Repository
-First, clone this repository onto your computer so you have all the configuration files and helper scripts:
+### Step 0: Clone This Repository (or Setup Workspace)
+Clone this repository to your computer so you have the reference files and a clean workspace:
 
 ```bash
 git clone https://github.com/codeturbulent/Acerone8_.git
@@ -157,7 +157,11 @@ pip install pycryptodomex pyusb pyserial colorama
 > **Helio G85 Fix:** If `mtk.py` throws `struct.error: unpack requires a buffer of 4 bytes` when reading MEID, open `mtkclient/Library/mtk_preloader.py` and ensure `buf = self.usbread(4)` checks `if len(buf) == 4:` before calling `unpack(">I", buf)`.
 
 #### 3. Run the Partition Dump Command
-Execute the dump using the virtual environment's Python binary with `sudo` (so it accesses the installed dependencies and raw USB devices):
+
+> [!IMPORTANT]
+> **Use the Virtual Environment's Python with `sudo`:**
+> Running `sudo python3` strips your virtual environment and calls the global system Python, causing `ModuleNotFoundError: No module named 'Cryptodome'`. Always invoke `sudo .venv/bin/python3`:
+
 ```bash
 sudo .venv/bin/python3 mtk.py r boot_b,init_boot_b,vbmeta_b \
     ../tablet_backup/boot_b.img,../tablet_backup/init_boot_b.img,../tablet_backup/vbmeta_b.img \
@@ -165,8 +169,8 @@ sudo .venv/bin/python3 mtk.py r boot_b,init_boot_b,vbmeta_b \
 ```
 
 4. **Connect the Tablet:**
-   - Power off the tablet completely.
-   - When the terminal displays `Waiting for PreLoader VCOM...`, plug the USB cable in **without holding any buttons** (or hold **Volume Up** only).
+   - Power OFF your tablet completely.
+   - When the terminal displays `Waiting for PreLoader VCOM...`, hold **BOTH Volume Up + Volume Down** (no Power button) and plug in the USB cable. (If connection fails, try without holding buttons or holding Volume Up only).
    - Keep it connected until all 3 partitions report `100.0% Read` and `All partitions were dumped`.
 
 #### 4. Save Immutable Copies of the Stock Originals
@@ -210,11 +214,13 @@ adb install -r tablet_backup/Magisk.apk
    ```
 
 #### 4. Pull the Patched Image to Your PC
-Pull the newly created patched file back to your computer:
+`adb pull` does not expand wildcards on the remote Android device. Dynamically resolve the filename and pull it back to your PC:
+
 ```bash
-adb pull /sdcard/Download/magisk_patched-*.img tablet_backup/magisk_patched.img
+PATCHED_FILE=$(adb shell "ls /sdcard/Download/magisk_patched-*.img" | tr -d '\r')
+adb pull "$PATCHED_FILE" tablet_backup/magisk_patched.img
 ```
-*You now have `magisk_patched.img` ready for flashing!*
+*You now have `magisk_patched.img` saved in `tablet_backup/` ready for flashing!*
 
 ---
 
@@ -256,41 +262,88 @@ The tablet's IMEI is registered to an enterprise portal (**Tectoro Pvt Ltd**). W
 
 ### How to permanently destroy this lock:
 
-Run our automated script:
+With your tablet rooted, powered on, and connected to your PC with USB debugging enabled, run this complete copy-pasteable command block in your terminal:
+
 ```bash
-./scripts/block_mdm.sh
+adb shell "su -c '
+echo \"[1/5] Disabling Google Zero-Touch activities...\"
+pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity >/dev/null 2>&1
+pm disable com.google.android.gms/.enterprise.zerotouch.businesslogic.ZeroTouchGmsTaskService >/dev/null 2>&1
+
+echo \"[2/5] Making zero_touch_prefs immutable...\"
+if [ -f /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml ]; then
+    chattr -i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
+    echo -n \"\" > /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
+    chmod 444 /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
+    chattr +i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
+fi
+
+echo \"[3/5] Disabling Android Enterprise provisioning & OTA updates...\"
+pm disable com.android.managedprovisioning >/dev/null 2>&1
+pm disable-user --user 0 com.android.managedprovisioning >/dev/null 2>&1
+pm disable com.chipc.update >/dev/null 2>&1
+pm disable-user --user 0 com.chipc.update >/dev/null 2>&1
+am force-stop com.google.android.gms >/dev/null 2>&1
+
+echo \"[4/5] Firewalling DeviceLockController at kernel level...\"
+DLC_UID=\$(pm list packages -U | grep com.android.devicelockcontroller | sed -n \"s/.*uid://p\")
+if [ -n \"\$DLC_UID\" ]; then
+    iptables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
+    ip6tables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
+fi
+
+echo \"[5/5] Installing persistent Magisk startup boot service...\"
+cat << \"EOF\" > /data/adb/service.d/block_mdm.sh
+#!/system/bin/sh
+while [ \"\$(getprop sys.boot_completed)\" != \"1\" ]; do
+    sleep 2
+done
+
+# Disable Zero-Touch activities
+pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity >/dev/null 2>&1
+pm disable com.google.android.gms/.enterprise.zerotouch.businesslogic.ZeroTouchGmsTaskService >/dev/null 2>&1
+
+# Lock prefs file
+if [ -f /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml ]; then
+    chattr -i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
+    echo -n \"\" > /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
+    chmod 444 /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
+    chattr +i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
+fi
+
+# Disable MDM packages
+pm disable com.android.managedprovisioning >/dev/null 2>&1
+pm disable-user --user 0 com.android.managedprovisioning >/dev/null 2>&1
+pm disable com.chipc.update >/dev/null 2>&1
+pm disable-user --user 0 com.chipc.update >/dev/null 2>&1
+
+# Kernel firewall
+DLC_UID=\$(pm list packages -U | grep com.android.devicelockcontroller | sed -n \"s/.*uid://p\")
+if [ -n \"\$DLC_UID\" ]; then
+    iptables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
+    ip6tables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
+fi
+
+rm -f /data/system/device_owner_2.xml /data/system/device_policies.xml
+EOF
+chmod 755 /data/adb/service.d/block_mdm.sh
+
+echo \"==================================================\"
+echo \"🎉 SUCCESS: Zero-Touch & MDM permanently defeated!\"
+echo \"You can now safely connect your tablet to Wi-Fi.\"
+echo \"==================================================\"
+'"
 ```
 
-Or execute directly via ADB root:
+### Detailed Breakdown of Protections:
+1. **Google Play Services Zero-Touch Activities Disabled:** Prevents GMS from showing `FactoryResetActivity` or invoking `ZeroTouchGmsTaskService`.
+2. **`zero_touch_prefs.xml` Immutable (`chattr +i`):** Zero-byte locked file prevents GMS from writing down the MDM token or countdown state.
+3. **`com.android.managedprovisioning` & `com.chipc.update` Disabled:** Android's internal enterprise device management service and OTA updater are permanently deactivated.
+4. **Kernel Firewall (`iptables` drop by UID):** `com.android.devicelockcontroller` cannot transmit any packets out to remote provisioning servers.
+5. **Persistent Magisk Service (`/data/adb/service.d/block_mdm.sh`):** Magisk executes this script at every boot as root, ensuring that updates or restarts never restore the MDM locks.
 
-1. **Disable Zero-Touch Factory Reset & Network Tasks in Google Play Services:**
-   ```bash
-   adb shell "su -c 'pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity'"
-   adb shell "su -c 'pm disable com.google.android.gms/.enterprise.zerotouch.businesslogic.ZeroTouchGmsTaskService'"
-   ```
-
-2. **Make the Zero-Touch Configuration File Immutable:**
-   ```bash
-   adb shell "su -c 'echo -n \"\" > /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml'"
-   adb shell "su -c 'chmod 444 /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml'"
-   adb shell "su -c 'chattr +i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml'"
-   ```
-   *The `+i` (immutable) attribute prevents even Google Play Services or system services from ever writing a reset command or token again.*
-
-3. **Disable Android Enterprise Managed Provisioning & Vendor OTA:**
-   ```bash
-   adb shell "su -c 'pm disable com.android.managedprovisioning; pm disable-user --user 0 com.android.managedprovisioning'"
-   adb shell "su -c 'pm disable com.chipc.update; pm disable-user --user 0 com.chipc.update'"
-   ```
-
-4. **Firewall DeviceLockController at Kernel Level:**
-   ```bash
-   DLC_UID=$(adb shell "pm list packages -U | grep com.android.devicelockcontroller | sed -n 's/.*uid://p'")
-   adb shell "su -c 'iptables -I OUTPUT -m owner --uid-owner $DLC_UID -j DROP; ip6tables -I OUTPUT -m owner --uid-owner $DLC_UID -j DROP'"
-   ```
-
-5. **Install Persistent Magisk Boot Service:**
-   The script in `scripts/block_mdm.sh` automatically installs `/data/adb/service.d/block_mdm.sh` so these protections run on every boot!
+> [!TIP]
+> **Now it is 100% safe to connect to Wi-Fi / Internet!** Your tablet is completely liberated.
 
 ---
 

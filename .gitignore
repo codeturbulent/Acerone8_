@@ -1,0 +1,16 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Device backups and dumps
+tablet_backup/
+mtkclient/
+*.img
+*.apk
+
+# Python caches & logs
+__pycache__/
+*.pyc
+*.pyo
+*.log

@@ -80,6 +80,14 @@ When dumping partitions with `mtkclient`, modern Helio G85 preloaders trigger tw
 
 ## 🛠️ Step-by-Step Walkthrough
 
+> [!CAUTION]
+> ### ⚠️ CRITICAL RULE: DO NOT CONNECT TO WI-FI / INTERNET YET!
+> On institutional tablets, the device's IMEI and serial number are registered with **Google Zero-Touch Enrollment**. Connecting to Wi-Fi before rooting will immediately trigger Google Play Services to download the management profile and lock your tablet with a wipe countdown.
+> 
+> - **After 1st Reset (Factory Mode):** Skip the internet setup ("Set up offline").
+> - **After 2nd Reset (Bootloader Unlock):** Skip the internet setup again ("Set up offline").
+> - **Keep Wi-Fi OFF** until you have completed **Step 6 (`block_mdm.sh`)**.
+
 ### Step 0: Clone This Repository
 First, clone this repository onto your computer so you have all the configuration files and helper scripts:
 
@@ -96,32 +104,34 @@ cd Acerone8_
 3. Release both keys when the Chinese/English test menu appears.
 4. Use **Volume Down** to navigate to **Clear Storage**.
 5. Press the **Power button** (or Volume Up) to confirm. The tablet formats and reboots fresh.
+6. **Setup Wizard (1st Reset):** When the Android setup wizard appears, select **"Set up offline"** (or **Skip**). **DO NOT connect to Wi-Fi.**
 
 ---
 
 ### Step 2: Bootloader Unlock
-1. Go through initial offline setup (do NOT connect to Wi-Fi yet).
-2. In **Settings > About tablet**, tap **Build number** 7 times.
-3. In **Settings > System > Developer options**:
+1. In the offline Android interface, open **Settings > About tablet** and tap **Build number** 7 times.
+2. In **Settings > System > Developer options**:
    - Toggle **OEM unlocking** -> ON.
    - Toggle **USB debugging** -> ON.
-4. Connect to PC and reboot to Fastboot:
+3. Connect to PC and reboot to Fastboot:
    ```bash
    adb reboot bootloader
    ```
-5. Unlock bootloader:
+4. Unlock bootloader:
    ```bash
    fastboot flashing unlock
    ```
-6. Press **Volume Up** on the tablet to confirm. Check unlock status:
+5. Press **Volume Up** on the tablet to confirm. Check unlock status:
    ```bash
    fastboot getvar unlocked
    # Result: unlocked: yes
    ```
-7. Reboot:
+6. Reboot the tablet:
    ```bash
    fastboot reboot
    ```
+7. **Setup Wizard (2nd Reset):** Unlocking the bootloader automatically factory resets the tablet a second time. When the setup wizard appears, again choose **"Set up offline"** / **Skip**. **DO NOT connect to Wi-Fi.**
+8. Re-enable **USB debugging** in Developer options so ADB can communicate with the tablet.
 
 ---
 

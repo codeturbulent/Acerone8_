@@ -12,16 +12,37 @@
 
 ## 📑 Table of Contents
 0. [Step 0: Clone This Repository](#step-0-clone-this-repository)
-1. [Device Architecture & Profile](#-device-architecture--profile)
-2. [Key Discoveries & Low-Level Fixes](#-key-discoveries--low-level-fixes)
-3. [Step 1: Hardware Factory Reset (MediaTek Factory Mode)](#step-1-hardware-factory-reset-mediatek-factory-mode)
-4. [Step 2: Bootloader Unlock](#step-2-bootloader-unlock)
-5. [Step 3: Zero-Risk Partition Dump via mtkclient](#step-3-zero-risk-partition-dump-via-mtkclient)
-6. [Step 4: GKI Magisk Patching](#step-4-gki-magisk-patching)
-7. [Step 5: Flashing via Fastboot](#step-5-flashing-via-fastboot)
-8. [Step 6: Defeating "Your device at work" / Tectoro Zero-Touch Lock](#-defeating-the-tectoro-pvt-ltd--google-zero-touch-lock)
-9. [Step 7: Flashing LineageOS / Custom GSI ROMs](#-flashing-lineageos--custom-gsi-roms)
-10. [Emergency Unbrick Failsafe](#-emergency-unbrick-failsafe)
+1. [End-to-End Workflow Diagram](#-end-to-end-workflow-diagram)
+2. [Device Architecture & Profile](#-device-architecture--profile)
+3. [Key Discoveries & Low-Level Fixes](#-key-discoveries--low-level-fixes)
+4. [Step 1: Hardware Factory Reset (MediaTek Factory Mode)](#step-1-hardware-factory-reset-mediatek-factory-mode)
+5. [Step 2: Bootloader Unlock](#step-2-bootloader-unlock)
+6. [Step 3: Zero-Risk Partition Dump via mtkclient](#step-3-zero-risk-partition-dump-via-mtkclient)
+7. [Step 4: Downloading & Patching with Magisk v31+](#step-4-downloading--patching-with-magisk-v31)
+8. [Step 5: Flashing via Fastboot](#step-5-flashing-via-fastboot)
+9. [Step 6: Defeating "Your device at work" / Tectoro Zero-Touch Lock](#-defeating-the-tectoro-pvt-ltd--google-zero-touch-lock)
+10. [Step 7: Flashing LineageOS / Custom GSI ROMs](#-flashing-lineageos--custom-gsi-roms)
+11. [Emergency Unbrick Failsafe](#-emergency-unbrick-failsafe)
+
+---
+
+## 🗺️ End-to-End Workflow Diagram
+
+```mermaid
+flowchart TD
+    A["Tablet Powered Off"] --> B["Hardware Factory Reset<br/>(Factory Mode -> Clear Storage)"]
+    B --> C["Unlock Bootloader in Fastboot<br/>(fastboot flashing unlock)"]
+    C --> D["Preloader Dump via mtkclient<br/>(boot_b.img, init_boot_b.img, vbmeta_b.img)"]
+    D --> E["Save Untouched Stock Originals<br/>(Failsafe in STOCK_ORIGINALS/)"]
+    E --> F["Push init_boot_b.img to Tablet via ADB"]
+    F --> G["Download & Install Magisk v31+ APK"]
+    G --> H["Patch init_boot.img in Magisk App<br/>(Produces magisk_patched.img)"]
+    H --> I["Pull Patched Image to PC via ADB"]
+    I --> J["Flash Patched init_boot via Fastboot<br/>(fastboot flash init_boot_b magisk_patched.img)"]
+    J --> K["Reboot & Verify Full Root (su)"]
+    K --> L["Neutralize Zero-Touch / Tectoro MDM<br/>(Run block_mdm.sh service)"]
+    L --> M["🎉 Safe Personal Tablet with Root!"]
+```
 
 ---
 
@@ -148,44 +169,73 @@ cd ..
 
 ---
 
-### Step 4: GKI Magisk Patching
-*Because this device uses GKI architecture, you must patch `init_boot`, NOT `boot`.*
+### Step 4: Downloading & Patching with Magisk v31+
+*Because this device uses modern Android GKI (Generic Kernel Image) architecture, you must patch `init_boot`, NOT `boot`.*
 
-1. Push `init_boot_b.img` to the tablet:
-   ```bash
-   adb push tablet_backup/init_boot_b.img /sdcard/Download/init_boot.img
+#### 1. Push the Stock `init_boot_b.img` to Tablet
+Make sure your tablet is powered ON, USB Debugging is enabled, and it is connected via USB:
+```bash
+adb push tablet_backup/init_boot_b.img /sdcard/Download/init_boot.img
+```
+
+#### 2. Download & Install Magisk v31+ Directly
+Download the latest official Magisk APK using `curl` and install it onto your tablet:
+```bash
+curl -L -o tablet_backup/Magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk"
+adb install -r tablet_backup/Magisk.apk
+```
+
+#### 3. Patch `init_boot.img` Inside the Magisk App
+1. Open the newly installed **Magisk** app on your tablet screen.
+2. In the top card (next to **Magisk**), tap **Install**.
+3. Under **Method**, select **"Select and Patch a File"**.
+4. A file picker will open:
+   - Navigate to your **Downloads** folder.
+   - Tap on **`init_boot.img`**.
+5. Tap **LET'S GO!** in the top right corner.
+6. Magisk will unpack, hook, and repack the ramdisk. In a few seconds, it will print:
    ```
-2. Install the latest [Magisk v31.1+ APK](https://github.com/topjohnwu/Magisk/releases):
-   ```bash
-   adb install -r Magisk.apk
+   Output file is written to /storage/emulated/0/Download/magisk_patched-xxxx_xxxxx.img
+   - All done!
    ```
-3. Open Magisk on the tablet:
-   - Tap **Install** > **Select and Patch a File**.
-   - Select `/sdcard/Download/init_boot.img`.
-   - Tap **LET'S GO!**.
-4. Pull the patched file back to your PC:
-   ```bash
-   adb pull /sdcard/Download/magisk_patched-*.img tablet_backup/magisk_patched.img
-   ```
+
+#### 4. Pull the Patched Image to Your PC
+Pull the newly created patched file back to your computer:
+```bash
+adb pull /sdcard/Download/magisk_patched-*.img tablet_backup/magisk_patched.img
+```
+*You now have `magisk_patched.img` ready for flashing!*
 
 ---
 
-### Step 5: Flashing via Fastboot
-1. Reboot to bootloader:
+### Step 5: Flashing Patched Image via Fastboot
+1. Reboot the tablet into bootloader (Fastboot mode):
    ```bash
    adb reboot bootloader
    ```
-2. Flash the patched image:
+2. Flash the patched image into the active `init_boot` slot (`init_boot_b`):
    ```bash
    fastboot flash init_boot_b tablet_backup/magisk_patched.img
+   ```
+3. Reboot the tablet into Android:
+   ```bash
    fastboot reboot
    ```
-3. Verify root via ADB:
+4. **Finalize Magisk Setup:**
+   - Once Android boots, open the **Magisk** app.
+   - If Magisk asks: *"Requires Additional Setup. Do you want to proceed?"*, tap **OK** (it will perform a quick 5-second reboot to finalize its environment).
+5. **Verify Full Root Access:**
+   Open a terminal on your computer and test `su`:
    ```bash
    adb shell "su -c id"
-   # Expected output:
+   # Output:
    # uid=0(root) gid=0(root) groups=0(root) context=u:r:magisk:s0
    ```
+   *(Grant the superuser prompt on the tablet screen if prompted).*
+
+   - **Magisk Version:** `31.1:MAGISK:R`
+   - **Root Context:** Unrestricted Magisk SELinux domain (`u:r:magisk:s0`).
+   **Congratulations! Your tablet is now 100% rooted!**
 
 ---
 

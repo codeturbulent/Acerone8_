@@ -270,86 +270,114 @@ With your tablet rooted, powered on, and connected to your PC with USB debugging
 ```
 
 #### Option 2: Run Directly in Terminal via ADB
-If you prefer running the commands manually without the script, execute this command block:
+Here is the clean, easy step-by-step guide to permanently blocking Zero-Touch enrollment and MDM on your tablet.
+
+---
+
+### Step 1: Open ADB Shell and Get Root
+
+Connect your tablet to your PC with USB debugging enabled, open your terminal (Command Prompt or PowerShell), and elevate to root:
 
 ```bash
-adb shell "su -c '
-echo \"[1/5] Disabling Google Zero-Touch activities...\"
-pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity >/dev/null 2>&1
-pm disable com.google.android.gms/.enterprise.zerotouch.businesslogic.ZeroTouchGmsTaskService >/dev/null 2>&1
+adb shell
+su
 
-echo \"[2/5] Making zero_touch_prefs immutable...\"
-if [ -f /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml ]; then
-    chattr -i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
-    echo -n \"\" > /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
-    chmod 444 /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
-    chattr +i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
-fi
-
-echo \"[3/5] Disabling Android Enterprise provisioning & OTA updates...\"
-pm disable com.android.managedprovisioning >/dev/null 2>&1
-pm disable-user --user 0 com.android.managedprovisioning >/dev/null 2>&1
-pm disable com.chipc.update >/dev/null 2>&1
-pm disable-user --user 0 com.chipc.update >/dev/null 2>&1
-am force-stop com.google.android.gms >/dev/null 2>&1
-
-echo \"[4/5] Firewalling DeviceLockController at kernel level...\"
-DLC_UID=\$(pm list packages -U | grep com.android.devicelockcontroller | sed -n \"s/.*uid://p\")
-if [ -n \"\$DLC_UID\" ]; then
-    iptables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
-    ip6tables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
-fi
-
-echo \"[5/5] Installing persistent Magisk startup boot service...\"
-cat << \"EOF\" > /data/adb/service.d/block_mdm.sh
-#!/system/bin/sh
-while [ \"\$(getprop sys.boot_completed)\" != \"1\" ]; do
-    sleep 2
-done
-
-# Disable Zero-Touch activities
-pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity >/dev/null 2>&1
-pm disable com.google.android.gms/.enterprise.zerotouch.businesslogic.ZeroTouchGmsTaskService >/dev/null 2>&1
-
-# Lock prefs file
-if [ -f /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml ]; then
-    chattr -i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
-    echo -n \"\" > /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
-    chmod 444 /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
-    chattr +i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
-fi
-
-# Disable MDM packages
-pm disable com.android.managedprovisioning >/dev/null 2>&1
-pm disable-user --user 0 com.android.managedprovisioning >/dev/null 2>&1
-pm disable com.chipc.update >/dev/null 2>&1
-pm disable-user --user 0 com.chipc.update >/dev/null 2>&1
-
-# Kernel firewall
-DLC_UID=\$(pm list packages -U | grep com.android.devicelockcontroller | sed -n \"s/.*uid://p\")
-if [ -n \"\$DLC_UID\" ]; then
-    iptables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
-    ip6tables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
-fi
-
-rm -f /data/system/device_owner_2.xml /data/system/device_policies.xml
-EOF
-chmod 755 /data/adb/service.d/block_mdm.sh
-
-echo \"==================================================\"
-echo \"🎉 SUCCESS: Zero-Touch & MDM permanently defeated!\"
-echo \"You can now safely connect your tablet to Wi-Fi.\"
-echo \"==================================================\"
-'"
 ```
 
-### Detailed Breakdown of Protections:
-1. **Google Play Services Zero-Touch Activities Disabled:** Prevents GMS from showing `FactoryResetActivity` or invoking `ZeroTouchGmsTaskService`.
-2. **`zero_touch_prefs.xml` Immutable (`chattr +i`):** Zero-byte locked file prevents GMS from writing down the MDM token or countdown state.
-3. **`com.android.managedprovisioning` & `com.chipc.update` Disabled:** Android's internal enterprise device management service and OTA updater are permanently deactivated.
-4. **Kernel Firewall (`iptables` drop by UID):** `com.android.devicelockcontroller` cannot transmit any packets out to remote provisioning servers.
-5. **Persistent Magisk Service (`/data/adb/service.d/block_mdm.sh`):** Magisk executes this script at every boot as root, ensuring that updates or restarts never restore the MDM locks.
+*Verification:* Your terminal prompt changes from `$` to `#`.
 
+---
+
+### Step 2: Disable MDM & Zero-Touch Services
+
+Copy and paste this command block into your root shell to disable the enrollment packages:
+
+```bash
+pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity
+pm disable com.google.android.gms/.enterprise.zerotouch.businesslogic.ZeroTouchGmsTaskService
+pm disable com.android.managedprovisioning
+pm disable com.chipc.update
+
+```
+
+*Verification:* Each command responds with `Package ... new state: disabled`.
+
+---
+
+### Step 3: Lock Down the Zero-Touch Config File
+
+Clear out the Zero-Touch preferences file and lock it down so corporate servers can never write tokens to it again:
+
+```bash
+if [ -f /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml ]; then
+    chattr -i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
+    echo -n "" > /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
+    chmod 444 /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
+    chattr +i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
+fi
+
+```
+
+*Verification:* The command completes silently without errors.
+
+---
+
+### Step 4: Apply the Kernel Firewall
+
+Block the Device Lock Controller app from communicating with remote servers at the network level:
+
+```bash
+DLC_UID=$(pm list packages -U | grep com.android.devicelockcontroller | sed -n "s/.*uid://p")
+if [ -n "$DLC_UID" ]; then
+    iptables -C OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP
+    ip6tables -C OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP
+    echo "Firewall rules applied for UID: $DLC_UID"
+fi
+
+```
+
+*Verification:* The terminal outputs `Firewall rules applied for UID: [number]`.
+
+---
+
+### Step 5: Install the Persistent Startup Script
+
+Create a Magisk background service so these rules and locks re-apply automatically every time your device reboots:
+
+```bash
+mkdir -p /data/adb/service.d
+cat << "EOF" > /data/adb/service.d/block_mdm.sh
+#!/system/bin/sh
+while [ "$(getprop sys.boot_completed)" != "1" ]; do
+    sleep 2
+done
+pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity >/dev/null 2>&1
+pm disable com.google.android.gms/.enterprise.zerotouch.businesslogic.ZeroTouchGmsTaskService >/dev/null 2>&1
+if [ -f /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml ]; then
+    chattr -i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
+    echo -n "" > /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
+    chmod 444 /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
+    chattr +i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
+fi
+pm disable com.android.managedprovisioning >/dev/null 2>&1
+pm disable com.chipc.update >/dev/null 2>&1
+DLC_UID=$(pm list packages -U | grep com.android.devicelockcontroller | sed -n "s/.*uid://p")
+if [ -n "$DLC_UID" ]; then
+    iptables -C OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP
+    ip6tables -C OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP
+fi
+rm -f /data/system/device_owner_2.xml /data/system/device_policies.xml
+EOF
+
+chmod 755 /data/adb/service.d/block_mdm.sh
+
+```
+
+*Verification:* Run `cat /data/adb/service.d/block_mdm.sh` to ensure the script contents display properly.
+
+---
+
+You are completely done! You can now turn on Wi-Fi and reboot your tablet safely.
 > [!TIP]
 > **Now it is 100% safe to connect to Wi-Fi / Internet!** Your tablet is completely liberated.
 

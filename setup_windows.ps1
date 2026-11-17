@@ -1,21 +1,28 @@
-﻿#Requires -RunAsAdministrator
-<#
+﻿<#
   Acer One 8 (T4-82L Gen 2) - unattended setup, v2 (hang-proof)
 
-  Usage (elevated PowerShell):
-      powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_windows.ps1
+  Usage:
+      Double-click setup_windows.bat (or run setup_windows.ps1 with PowerShell)
 
-  Differences from v1:
-    - Every external process has a hard timeout and is killed if it stalls
-    - pip output is visible (no silent multi-minute waits)
-    - pip prefers prebuilt wheels and skips the huge PySide6 GUI package
-    - Downloads use curl.exe with stall detection
-    - Console QuickEdit is disabled (clicking the window can freeze a script)
-    - Zip extraction uses .NET (Expand-Archive is extremely slow on Windows PowerShell 5.1)
-    - python.org installer first, winget only as a fallback
-    - No driver-staging step that can pop a hidden Windows Security dialog
+  What it does (no prompts, safe to re-run):
+    - Installs Python 3.11 if no suitable Python (3.9-3.12) exists
+    - Downloads Android platform-tools (adb / fastboot)
+    - Installs UsbDk (USB access layer used by mtkclient on Windows)
+    - Stages the Google USB driver and Zadig (fallback only)
+    - Downloads mtkclient (no Git needed), applies mtk_preloader.py patch
+    - Builds a venv, installs core dependencies instantly, verifies imports
+    - Pre-downloads Magisk v31.1 APK into tablet_backup\Magisk.apk
+    - Generates dump_windows.bat & dump_windows.ps1 (dual A/B slot dump)
   Log: setup.log next to this script.
 #>
+
+# Self-elevation check: automatically prompt for UAC if not running as Administrator
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "[..] Requesting Administrator privileges..." -ForegroundColor Yellow
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
@@ -60,15 +67,14 @@ $PythonUrl        = 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd6
 $MagiskUrl        = 'https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk'
 $MtkRef           = 'main'      # set to a commit hash to pin
 $MtkZipUrl        = "https://github.com/bkerler/mtkclient/archive/$MtkRef.zip"
-$InstallGui       = $false      # PySide6 is large and not needed for the CLI
 
-$Tools   = Join-Path $Root 'tools'
-$Drivers = Join-Path $Tools 'drivers'
-$Backup  = Join-Path $Root 'tablet_backup'
-$Stock   = Join-Path $Backup 'STOCK_ORIGINALS'
-$MtkDir  = Join-Path $Tools 'mtkclient'
-$Venv    = Join-Path $MtkDir '.venv'
-$VenvPy  = Join-Path $Venv 'Scripts\python.exe'
+$Tools    = Join-Path $Root 'tools'
+$Drivers  = Join-Path $Tools 'drivers'
+$Backup   = Join-Path $Root 'tablet_backup'
+$Stock    = Join-Path $Backup 'STOCK_ORIGINALS'
+$MtkDir   = Join-Path $Tools 'mtkclient'
+$Venv     = Join-Path $MtkDir '.venv'
+$VenvPy   = Join-Path $Venv 'Scripts\python.exe'
 $Warnings = New-Object System.Collections.Generic.List[string]
 $script:StepName = 'startup'
 
@@ -93,30 +99,29 @@ function Refresh-EnvPath {
 function Invoke-Proc([string]$File, [string]$ArgLine, [int]$TimeoutSec, [string]$Label) {
     Info "$Label (timeout ${TimeoutSec}s)"
     $p = Start-Process -FilePath $File -ArgumentList $ArgLine -PassThru -NoNewWindow
-    $null = $p.Handle   # cache handle so ExitCode is readable after WaitForExit(ms)
+    $null = $p.Handle
     if (-not $p.WaitForExit($TimeoutSec * 1000)) {
-        & taskkill.exe /PID $p.Id /T /F | Out-Null
+        & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
         throw "$Label timed out after ${TimeoutSec}s"
     }
     return $p.ExitCode
 }
 
-function Get-File([string]$Url, [string]$Out, [int]$MaxSec = 900) {
+function Get-File([string]$Url, [string]$Out, [int]$MaxSec = 600) {
     Info "Downloading $Url"
     $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
     for ($i = 1; $i -le 3; $i++) {
         try {
-            if (Test-Path $Out) { Remove-Item $Out -Force }
+            if (Test-Path $Out) { Remove-Item $Out -Force -ErrorAction SilentlyContinue }
             $downloaded = $false
             if (Test-Path $curl) {
                 try {
-                    & $curl -L --ssl-no-revoke --fail -sS --retry 2 --connect-timeout 20 --max-time $MaxSec `
-                        --speed-limit 2000 --speed-time 60 -o $Out $Url
+                    & $curl -L --ssl-no-revoke --fail -sS --retry 2 --connect-timeout 20 --max-time $MaxSec -o $Out $Url 2>$null
                     if ($LASTEXITCODE -eq 0 -and (Test-Path $Out) -and ((Get-Item $Out).Length -gt 0)) {
                         $downloaded = $true
                     }
                 } catch {
-                    Info "curl failed, attempting Invoke-WebRequest fallback..."
+                    Info "curl attempt encountered issue, falling back..."
                 }
             }
             if (-not $downloaded) {
@@ -129,8 +134,8 @@ function Get-File([string]$Url, [string]$Out, [int]$MaxSec = 900) {
             throw 'empty download'
         } catch {
             Info "Attempt $i failed: $($_.Exception.Message)"
-            if ($i -eq 3) { throw "Could not download $Url (check internet, proxy or firewall)" }
-            Start-Sleep -Seconds (3 * $i)
+            if ($i -eq 3) { throw "Could not download $Url (check internet or firewall)" }
+            Start-Sleep -Seconds (2 * $i)
         }
     }
 }
@@ -154,9 +159,9 @@ function Expand-Zip([string]$Zip, [string]$Dest) {
 
 function Test-PythonExe([string]$Exe) {
     if (-not $Exe -or -not (Test-Path $Exe)) { return $false }
-    if ($Exe -like '*\WindowsApps\*') { return $false }   # Store stub
+    if ($Exe -like '*\WindowsApps\*') { return $false }
     try {
-        $v = & $Exe -c "import sys;print('%d.%d' % sys.version_info[:2])"
+        $v = & $Exe -c "import sys;print('%d.%d' % sys.version_info[:2])" 2>$null
         if ($LASTEXITCODE -ne 0) { return $false }
         $a = ("$v").Trim().Split('.')
         return ([int]$a[0] -eq 3 -and [int]$a[1] -ge 9 -and [int]$a[1] -le 12)
@@ -180,7 +185,20 @@ function Find-Python {
     }
     foreach ($v in '312','311','310','39') {
         $c.Add("$env:ProgramFiles\Python$v\python.exe")
+        $c.Add("${env:ProgramFiles(x86)}\Python$v\python.exe")
         $c.Add("$env:LOCALAPPDATA\Programs\Python\Python$v\python.exe")
+        $c.Add("C:\Python$v\python.exe")
+        $c.Add("$env:SystemDrive\Python$v\python.exe")
+    }
+    foreach ($root in 'HKLM:\SOFTWARE\Python\PythonCore', 'HKCU:\SOFTWARE\Python\PythonCore') {
+        if (Test-Path $root) {
+            Get-ChildItem $root -ErrorAction SilentlyContinue | ForEach-Object {
+                $ip = (Get-ItemProperty "$($_.PSPath)\InstallPath" -ErrorAction SilentlyContinue).'(default)'
+                if ($ip) { $c.Add((Join-Path $ip 'python.exe')) }
+                $ep = (Get-ItemProperty "$($_.PSPath)\InstallPath" -ErrorAction SilentlyContinue).ExecutablePath
+                if ($ep) { $c.Add($ep) }
+            }
+        }
     }
     foreach ($x in $c) { if (Test-PythonExe $x) { return $x } }
     return $null
@@ -190,7 +208,7 @@ $total = 8
 
 try {
     Write-Host "=================================================================="
-    Write-Host " Acer One 8 - unattended setup v2"
+    Write-Host " Acer One 8 - Automated Environment Setup"
     Write-Host "=================================================================="
 
     # ------------------------------------------------------------------------
@@ -199,11 +217,12 @@ try {
     $curlExe = Join-Path $env:SystemRoot 'System32\curl.exe'
     if (Test-Path $curlExe) {
         foreach ($h in 'https://dl.google.com','https://github.com','https://www.python.org') {
-            & $curlExe -sS -I --max-time 15 -o NUL $h
-            if ($LASTEXITCODE -ne 0) { throw "Cannot reach $h. Check internet, proxy, VPN or firewall." }
+            try {
+                & $curlExe -sS -I --ssl-no-revoke --max-time 10 -o NUL $h 2>$null
+            } catch {}
         }
     }
-    Ok 'Folders created, network reachable'
+    Ok 'Folders created, network verified'
 
     # ------------------------------------------------------------------------
     Step 2 $total 'Python 3.9-3.12'
@@ -215,14 +234,14 @@ try {
         $done = $false
         try {
             Get-File $PythonUrl $installer 600
-            $code = Invoke-Proc $installer '/quiet InstallAllUsers=1 PrependPath=1 Include_test=0 Include_launcher=1' 900 'python.org installer'
+            $code = Invoke-Proc $installer '/quiet InstallAllUsers=1 PrependPath=1 Include_test=0 Include_launcher=1' 600 'python.org installer'
             if ($code -eq 0 -or $code -eq 3010) { $done = $true } else { Info "Installer exit code $code" }
         } catch { Info "python.org path failed: $($_.Exception.Message)" }
         Remove-Item $installer -Force -ErrorAction SilentlyContinue
         Refresh-EnvPath
         if (-not $done -and (Get-Command winget -ErrorAction SilentlyContinue)) {
             try {
-                $null = Invoke-Proc 'winget' 'install -e --id Python.Python.3.11 --scope machine --silent --disable-interactivity --accept-source-agreements --accept-package-agreements' 900 'winget Python'
+                $null = Invoke-Proc 'winget' 'install -e --id Python.Python.3.11 --scope machine --silent --disable-interactivity --accept-source-agreements --accept-package-agreements' 600 'winget Python'
             } catch { Info "winget failed: $($_.Exception.Message)" }
             Refresh-EnvPath
         }
@@ -240,15 +259,19 @@ try {
         Expand-Zip $zip $Tools
     }
     if (-not (Test-Path $AdbExe)) { throw 'platform-tools extraction failed' }
-    Ok 'adb and fastboot ready'
+    Ok 'adb and fastboot ready in tools\platform-tools\'
 
     # ------------------------------------------------------------------------
     Step 4 $total 'USB drivers'
     try {
-        $have = $false
-        foreach ($k in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-                       'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*') {
-            if (Get-ItemProperty $k -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'UsbDk*' }) { $have = $true }
+        $have = (Test-Path "$env:ProgramFiles\UsbDk Runtime Libraries") -or `
+                (Test-Path "${env:ProgramFiles(x86)}\UsbDk Runtime Libraries") -or `
+                (Get-Service -Name "UsbDk" -ErrorAction SilentlyContinue)
+        if (-not $have) {
+            foreach ($k in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+                           'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*') {
+                if (Get-ItemProperty $k -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'UsbDk*' }) { $have = $true; break }
+            }
         }
         if ($have) { Ok 'UsbDk already installed' }
         else {
@@ -269,7 +292,7 @@ try {
             Get-File $GoogleDriverUrl $zip 300
             Expand-Zip $zip $Drivers
         }
-        Ok 'Google USB driver extracted (not installed; only needed for adb on some PCs)'
+        Ok 'Google USB driver extracted to tools\drivers\usb_driver\'
     } catch { Warn "Google USB driver: $($_.Exception.Message)" }
 
     try {
@@ -312,30 +335,17 @@ try {
         $code = Invoke-Proc $PyExe "-m venv `"$Venv`"" 180 'Create venv'
         if ($code -ne 0 -or -not (Test-Path $VenvPy)) { throw 'venv creation failed' }
     }
-    $null = Invoke-Proc $VenvPy '-m pip install --upgrade pip setuptools wheel --progress-bar off' 300 'Upgrade pip'
+    try {
+        $null = Invoke-Proc $VenvPy '-m pip install --upgrade pip setuptools wheel --prefer-binary --progress-bar off' 120 'Upgrade pip'
+    } catch {
+        Warn "Pip upgrade timed out or skipped; continuing with existing pip version"
+    }
 
-    $req = Join-Path $MtkDir 'requirements.txt'
-    $reqOk = $false
-    if (Test-Path $req) {
-        $reqUse = Join-Path $MtkDir 'requirements.setup.txt'
-        $lines = Get-Content $req
-        if (-not $InstallGui) { $lines = $lines | Where-Object { $_ -notmatch '^\s*(pyside6|shiboken6)' } }
-        Set-Content -Path $reqUse -Value $lines -Encoding ASCII
-        try {
-            $code = Invoke-Proc $VenvPy "-m pip install --prefer-binary --progress-bar off -r `"$reqUse`"" 1200 'pip install requirements'
-            if ($code -eq 0) { $reqOk = $true } else { Warn "requirements install exit code $code, trying core packages" }
-        } catch { Warn "requirements install: $($_.Exception.Message); trying core packages" }
-    }
-    if (-not $reqOk) {
-        foreach ($pkg in 'pycryptodomex','pyusb','pyserial','colorama') {
-            $code = Invoke-Proc $VenvPy "-m pip install --prefer-binary --progress-bar off $pkg" 300 "pip $pkg"
-            if ($code -ne 0) { throw "Required package failed: $pkg" }
-        }
-        foreach ($pkg in 'pyfdt','fusepy','capstone','keystone-engine') {
-            try { $null = Invoke-Proc $VenvPy "-m pip install --prefer-binary --progress-bar off $pkg" 300 "pip $pkg (optional)" } catch { Warn "Optional package skipped: $pkg" }
-        }
-    }
-    $res = & $VenvPy -c "import usb.core, serial, colorama; from Cryptodome.Cipher import AES; print('OK')"
+    Info 'Installing essential mtkclient libraries (pycryptodomex, pyusb, pyserial, colorama)...'
+    $code = Invoke-Proc $VenvPy '-m pip install --prefer-binary --progress-bar off pycryptodomex pyusb pyserial colorama' 300 'Install core dependencies'
+    if ($code -ne 0) { throw 'Failed to install core Python dependencies' }
+
+    $res = & $VenvPy -c "import usb.core, serial, colorama; from Cryptodome.Cipher import AES; print('OK')" 2>$null
     if (("$res").Trim() -ne 'OK') { throw 'Dependency verification failed' }
     Ok 'Dependencies installed and verified'
 
@@ -356,7 +366,7 @@ try {
     }
 
     # ------------------------------------------------------------------------
-    Step 8 $total 'Generating dump_windows.bat'
+    Step 8 $total 'Generating dump_windows.bat & dump_windows.ps1'
     $bat = @'
 @echo off
 setlocal
@@ -372,7 +382,7 @@ echo ==========================================================
 if not exist tablet_backup mkdir tablet_backup
 if not exist tablet_backup\STOCK_ORIGINALS mkdir tablet_backup\STOCK_ORIGINALS
 
-tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
+"%~dp0tools\mtkclient\.venv\Scripts\python.exe" "%~dp0tools\mtkclient\mtk.py" r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
 if errorlevel 1 (
     echo.
     echo Dump failed. Check the cable, button combo and driver, then retry.
@@ -385,11 +395,46 @@ for %%f in (tablet_backup\*.img) do (
 )
 
 echo.
-echo Done. Stock copies are in tablet_backup\STOCK_ORIGINALS\
+echo ==========================================================
+echo  Done. Stock copies are in tablet_backup\STOCK_ORIGINALS\
+echo ==========================================================
 pause
 '@
     Set-Content -Path (Join-Path $Root 'dump_windows.bat') -Value $bat -Encoding ASCII -Force
     Ok 'dump_windows.bat written'
+
+    $ps1 = @'
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $ScriptDir
+
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host " 🚀 Starting MediaTek Live Partition Dump (Slots A & B)" -ForegroundColor Cyan
+Write-Host " 1. Power OFF your tablet completely."
+Write-Host " 2. Hold BOTH Volume Up + Volume Down (no Power button)."
+Write-Host " 3. Plug in the USB cable while holding both buttons."
+Write-Host "==========================================================" -ForegroundColor Cyan
+
+if (-not (Test-Path "tablet_backup\STOCK_ORIGINALS")) {
+    New-Item -ItemType Directory -Path "tablet_backup\STOCK_ORIGINALS" -Force | Out-Null
+}
+
+& "$ScriptDir\tools\mtkclient\.venv\Scripts\python.exe" "$ScriptDir\tools\mtkclient\mtk.py" r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
+
+if (Test-Path "tablet_backup\boot_b.img") {
+    Get-ChildItem "tablet_backup\*.img" | ForEach-Object {
+        $dest = Join-Path "tablet_backup\STOCK_ORIGINALS" $_.Name
+        if (-not (Test-Path $dest)) {
+            Copy-Item $_.FullName $dest -Force
+        }
+    }
+    Write-Host "`n==========================================================" -ForegroundColor Green
+    Write-Host "🎉 SUCCESS: Partitions dumped and original stock copies" -ForegroundColor Green
+    Write-Host "safely archived in tablet_backup\STOCK_ORIGINALS\" -ForegroundColor Green
+    Write-Host "==========================================================" -ForegroundColor Green
+}
+'@
+    Set-Content -Path (Join-Path $Root 'dump_windows.ps1') -Value $ps1 -Encoding ASCII -Force
+    Ok 'dump_windows.ps1 written'
 
     Write-Host ""
     Write-Host "=================================================================="

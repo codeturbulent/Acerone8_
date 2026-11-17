@@ -12,7 +12,7 @@ echo ==========================================================
 if not exist tablet_backup mkdir tablet_backup
 if not exist tablet_backup\STOCK_ORIGINALS mkdir tablet_backup\STOCK_ORIGINALS
 
-tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
+"%~dp0tools\mtkclient\.venv\Scripts\python.exe" "%~dp0tools\mtkclient\mtk.py" r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
 if errorlevel 1 (
     echo.
     echo Dump failed. Check the cable, button combo and driver, then retry.
@@ -20,7 +20,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Copy to STOCK_ORIGINALS without overwriting anything already there.
 for %%f in (tablet_backup\*.img) do (
     if not exist "tablet_backup\STOCK_ORIGINALS\%%~nxf" copy "%%f" "tablet_backup\STOCK_ORIGINALS\" >nul
 )

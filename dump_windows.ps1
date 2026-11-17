@@ -12,7 +12,7 @@ if (-not (Test-Path "tablet_backup\STOCK_ORIGINALS")) {
     New-Item -ItemType Directory -Path "tablet_backup\STOCK_ORIGINALS" -Force | Out-Null
 }
 
-& "tools\mtkclient\.venv\Scripts\python.exe" tools\mtkclient\mtk.py r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
+& "$ScriptDir\tools\mtkclient\.venv\Scripts\python.exe" "$ScriptDir\tools\mtkclient\mtk.py" r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
 
 if (Test-Path "tablet_backup\boot_b.img") {
     Get-ChildItem "tablet_backup\*.img" | ForEach-Object {

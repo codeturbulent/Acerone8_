@@ -142,8 +142,9 @@ echo " 2. Hold BOTH Volume Up + Volume Down (no Power button)."
 echo " 3. Plug in the USB cable while holding both buttons."
 echo "=========================================================="
 
-sudo tools/mtkclient/.venv/bin/python3 tools/mtkclient/mtk.py r "boot_b,init_boot_b,vbmeta_b" \
-    "tablet_backup/boot_b.img,tablet_backup/init_boot_b.img,tablet_backup/vbmeta_b.img" \
+sudo tools/mtkclient/.venv/bin/python3 tools/mtkclient/mtk.py r \
+    "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" \
+    "tablet_backup/boot_a.img,tablet_backup/boot_b.img,tablet_backup/init_boot_a.img,tablet_backup/init_boot_b.img,tablet_backup/vbmeta_a.img,tablet_backup/vbmeta_b.img" \
     --skipwdt
 
 if [ -f tablet_backup/boot_b.img ]; then

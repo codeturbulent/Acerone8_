@@ -117,16 +117,16 @@ Whether you are on a fresh Windows machine or Linux, you do not need to hunt dow
 #### 2. Run the Automated Setup
 
 ##### 🪟 Windows Setup:
-Double-click **`setup_windows.bat`** (or right-click **`setup_windows.ps1`** -> **Run with PowerShell**).
+Right-click **`setup_windows.bat`** and select **Run as administrator** (or double-click it; it will request elevation).
 
-> **What `setup_windows.bat` / `setup_windows.ps1` does automatically (Zero interaction):**
-> - **Zero Prompts / No Admin Required:** Installs Python 3.11 silently into the user profile if missing.
-> - **No Git Required:** Downloads `mtkclient` directly from GitHub archive.
-> - Downloads **Android SDK Platform-Tools** (`adb` & `fastboot`) into `tools/platform-tools/`.
-> - Downloads **Google Windows USB Drivers** into `tools/drivers/usb_driver/`.
-> - Downloads **Zadig 2.9** driver installer into `tools/zadig-2.9.exe`.
-> - Automatically applies the modified **`mtk_preloader.py`** (eliminating the Helio G85 buffer crash).
-> - Creates an isolated Python virtual environment (`.venv`) with all required libraries (`pycryptodomex`, `pyusb`, `pyserial`, `colorama`).
+> **What `setup_windows.bat` / `setup_windows.ps1` does automatically (100% unattended, safe to re-run):**
+> - Detects suitable Python (3.9–3.12); if missing, silently installs Python 3.11 for all users.
+> - Downloads and extracts **Android SDK Platform-Tools** (`adb` & `fastboot`).
+> - Installs **UsbDk** (low-level USB access layer used by `mtkclient` on Windows — eliminates the need for manual driver swapping!).
+> - Stages the **Google Windows USB Driver** via `pnputil` and downloads Zadig as fallback.
+> - Downloads **mtkclient** archive (no Git needed) and applies the modified **`mtk_preloader.py`** patch.
+> - Creates isolated Python virtual environment (`.venv`), installs requirements, verifies imports, and logs all steps to `setup.log`.
+> - Generates **`dump_windows.bat`** (read-only live partition dump for both slots A & B).
 
 ##### 🐧 Linux Setup:
 Open a terminal inside the cloned folder and run:
@@ -141,15 +141,16 @@ chmod +x setup_linux.sh && ./setup_linux.sh
 
 ---
 
-#### 3. Windows Driver Setup via Zadig (Required ONCE for MediaTek BROM / Preloader)
-Windows requires the **libusb-win32** driver to communicate with MediaTek devices in low-level bootrom mode:
-1. Open **`tools\zadig-2.9.exe`**.
-2. Click **Options > List All Devices**.
-3. Turn **OFF** your tablet.
-4. Hold **BOTH Volume Up + Volume Down** (no Power button) and plug in the USB cable to your PC.
-5. In Zadig's top dropdown list, quickly select **`MediaTek PreLoader USB VCOM Port`** or **`MTK USB Port`** (Hardware ID: `VID 0E8D`).
-6. In the target driver box (green arrow), select **`libusb-win32`** (or **`WinUSB`**).
-7. Click **Replace Driver** (or **Install Driver**). Once complete, Windows is 100% ready for partition dumping!
+#### 3. Windows Driver Notes (UsbDk vs Zadig)
+Thanks to **UsbDk** being installed automatically by `setup_windows.bat`, Windows will typically detect your MediaTek tablet in BROM mode without any manual configuration!
+- If your device is detected and dumped by `dump_windows.bat`, **you do not need Zadig**.
+- **Zadig Fallback (Only needed if UsbDk fails on your PC):**
+  1. Open **`tools\zadig-2.9.exe`**.
+  2. Click **Options > List All Devices**.
+  3. Turn **OFF** your tablet.
+  4. Hold **BOTH Volume Up + Volume Down** (no Power button) and plug in the USB cable.
+  5. In Zadig's top dropdown list, select **`MediaTek PreLoader USB VCOM Port`** or **`MTK USB Port`** (Hardware ID: `VID 0E8D`).
+  6. In the target driver box, select **`libusb-win32`** (or **`WinUSB`**) and click **Replace Driver**.
 
 > [!TIP]
 > If your device shows an exclamation mark in Windows Device Manager during Fastboot or ADB, right-click it, choose **Update Driver > Browse my computer**, and select **`tools\drivers\usb_driver`** (Google USB Driver).
@@ -208,17 +209,18 @@ If you prefer running the command directly in your terminal from the `Acerone8_`
 
 - **On Windows (Command Prompt / PowerShell):**
   ```cmd
-  tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r "boot_b,init_boot_b,vbmeta_b" "tablet_backup\boot_b.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_b.img" --skipwdt
+  tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
   ```
 
 > [!TIP]
 > **Why are quotes (`"..."`) required around the commas in Windows?**
-> In Windows PowerShell and CMD, commas are treated as parameter and array separators. Without quotes, PowerShell splits `boot_b,init_boot_b,vbmeta_b` into separate arguments instead of passing it as a single comma-separated string to `mtkclient`, causing syntax/argument errors.
+> In Windows PowerShell and CMD, commas are treated as parameter and array separators. Without quotes, PowerShell splits `boot_a,boot_b,...` into separate arguments instead of passing it as a single comma-separated string to `mtkclient`, causing syntax/argument errors.
 
 - **On Linux:**
   ```bash
-  sudo tools/mtkclient/.venv/bin/python3 tools/mtkclient/mtk.py r "boot_b,init_boot_b,vbmeta_b" \
-      "tablet_backup/boot_b.img,tablet_backup/init_boot_b.img,tablet_backup/vbmeta_b.img" \
+  sudo tools/mtkclient/.venv/bin/python3 tools/mtkclient/mtk.py r \
+      "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" \
+      "tablet_backup/boot_a.img,tablet_backup/boot_b.img,tablet_backup/init_boot_a.img,tablet_backup/init_boot_b.img,tablet_backup/vbmeta_a.img,tablet_backup/vbmeta_b.img" \
       --skipwdt
   ```
 

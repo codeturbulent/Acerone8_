@@ -1,230 +1,339 @@
-﻿# ==============================================================================
-# Acer One 8 (T4-82L Gen 2) - 100% Automated Environment Setup (Windows)
-# Fully automated: Zero prompts, zero clicks, no Git or admin rights required.
-# ==============================================================================
+﻿#Requires -RunAsAdministrator
+<#
+  Acer One 8 (T4-82L Gen 2) - unattended environment setup (Windows)
 
+  Usage (from an elevated PowerShell, or right-click > Run with PowerShell as admin):
+      powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_windows.ps1
+
+  What it does (no prompts, safe to re-run):
+    - Installs Python 3.11 if no suitable Python (3.9-3.12) exists
+    - Downloads Android platform-tools (adb / fastboot)
+    - Installs UsbDk (USB access layer used by mtkclient on Windows)
+    - Stages the Google USB driver and Zadig (Zadig is only a fallback, never launched)
+    - Downloads mtkclient (no Git needed), applies mtk_preloader.py patch if present
+    - Builds a venv, installs requirements, verifies imports
+    - Generates dump_windows.bat (read-only partition dump, both A/B slots)
+  Log file: setup.log (next to this script)
+#>
+
+$ErrorActionPreference = 'Stop'
+$ProgressPreference    = 'SilentlyContinue'   # makes Invoke-WebRequest much faster
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$ErrorActionPreference = "Stop"
-# Speeds up Invoke-WebRequest by disabling the slow PowerShell progress render
-$ProgressPreference = "SilentlyContinue"
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $ScriptDir
+$Root = $PSScriptRoot
+if (-not $Root) { $Root = Split-Path -Parent $MyInvocation.MyCommand.Path }
+Set-Location $Root
 
-Write-Host "==================================================================" -ForegroundColor Cyan
-Write-Host " 🚀 Acer One 8 - Automated Environment Setup (Windows)" -ForegroundColor Cyan
-Write-Host "    (Zero user interaction required - fully automated)" -ForegroundColor Gray
-Write-Host "==================================================================" -ForegroundColor Cyan
+try { Start-Transcript -Path (Join-Path $Root 'setup.log') -Force | Out-Null } catch {}
 
-# 1. Create Workspace Directories
-Write-Host "`n[1/6] Creating workspace folders..." -ForegroundColor Yellow
-$Dirs = @(
-    "tools",
-    "tools\drivers",
-    "tablet_backup",
-    "tablet_backup\STOCK_ORIGINALS"
-)
-foreach ($d in $Dirs) {
-    if (-not (Test-Path $d)) {
-        New-Item -ItemType Directory -Path $d -Force | Out-Null
-    }
-}
-Write-Host "  ✓ Folders ready: tools\, tablet_backup\STOCK_ORIGINALS\" -ForegroundColor Green
+# ----------------------------------------------------------------------------
+# Config
+# ----------------------------------------------------------------------------
+$PlatformToolsUrl = 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip'
+$GoogleDriverUrl  = 'https://dl.google.com/android/repository/usb_driver_r13-windows.zip'
+$ZadigUrl         = 'https://github.com/pbatard/libwdi/releases/download/v1.5.1/zadig-2.9.exe'
+$UsbDkUrl         = 'https://github.com/daynix/UsbDk/releases/download/v1.00-22/UsbDk_1.0.22_x64.msi'
+$PythonUrl        = 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe'
+# Set to a commit hash to pin mtkclient (recommended once you have a working patch).
+$MtkRef           = 'main'
+$MtkZipUrl        = "https://github.com/bkerler/mtkclient/archive/$MtkRef.zip"
 
-# Helper function to refresh environment PATH
+$Tools    = Join-Path $Root 'tools'
+$Drivers  = Join-Path $Tools 'drivers'
+$Backup   = Join-Path $Root 'tablet_backup'
+$Stock    = Join-Path $Backup 'STOCK_ORIGINALS'
+$MtkDir   = Join-Path $Tools 'mtkclient'
+$Venv     = Join-Path $MtkDir '.venv'
+$VenvPy   = Join-Path $Venv 'Scripts\python.exe'
+
+$Warnings = New-Object System.Collections.Generic.List[string]
+
+# ----------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------
+function Step($n, $total, $msg) { Write-Host ""; Write-Host "[$n/$total] $msg" -ForegroundColor Cyan }
+function Ok($msg)   { Write-Host "  [ok]   $msg" -ForegroundColor Green }
+function Info($msg) { Write-Host "  [..]   $msg" -ForegroundColor Gray }
+function Warn($msg) { Write-Host "  [warn] $msg" -ForegroundColor Yellow; $script:Warnings.Add($msg) }
+
 function Refresh-EnvPath {
-    $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-    $userPath    = [System.Environment]::GetEnvironmentVariable("Path", "User")
-    $env:Path    = "$machinePath;$userPath"
-    
-    # Also include standard user Python paths if they exist
-    $pyUserDir = "$env:LOCALAPPDATA\Programs\Python\Python311"
-    if (Test-Path $pyUserDir) {
-        $env:Path = "$pyUserDir;$pyUserDir\Scripts;$env:Path"
+    $m = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $u = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = "$m;$u"
+}
+
+function Get-File([string]$Url, [string]$Out) {
+    for ($i = 1; $i -le 4; $i++) {
+        try {
+            if (Test-Path $Out) { Remove-Item $Out -Force }
+            Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Out
+            if ((Test-Path $Out) -and ((Get-Item $Out).Length -gt 0)) { return }
+            throw 'empty download'
+        } catch {
+            Info "Download attempt $i failed: $($_.Exception.Message)"
+            if ($i -eq 4) { throw "Could not download $Url" }
+            Start-Sleep -Seconds (3 * $i)
+        }
     }
 }
 
-# 2. Check or Silently Install Python 3.11 (No Admin / UAC prompt needed)
-Write-Host "`n[2/6] Checking Python installation..." -ForegroundColor Yellow
+function Expand-Clean([string]$Zip, [string]$Dest) {
+    New-Item -ItemType Directory -Path $Dest -Force | Out-Null
+    Expand-Archive -Path $Zip -DestinationPath $Dest -Force
+    Remove-Item $Zip -Force
+}
+
+function Test-PythonExe([string]$Exe) {
+    # Accept Python 3.9 - 3.12 only; reject the Microsoft Store stub.
+    if (-not $Exe -or -not (Test-Path $Exe)) { return $false }
+    if ($Exe -like '*\WindowsApps\*') { return $false }
+    try {
+        $v = & $Exe -c "import sys;print('%d.%d' % sys.version_info[:2])"
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $parts = ("$v").Trim().Split('.')
+        $maj = [int]$parts[0]; $min = [int]$parts[1]
+        return ($maj -eq 3 -and $min -ge 9 -and $min -le 12)
+    } catch { return $false }
+}
+
+function Find-Python {
+    $cands = New-Object System.Collections.Generic.List[string]
+
+    $py = Get-Command py -ErrorAction SilentlyContinue
+    if ($py) {
+        foreach ($ver in '-3.12', '-3.11', '-3.10', '-3.9') {
+            try {
+                $p = & $py.Source $ver -c "import sys;print(sys.executable)" 2>$null
+                if ($LASTEXITCODE -eq 0 -and $p) { $cands.Add(("$p").Trim()) }
+            } catch {}
+        }
+    }
+    foreach ($n in 'python', 'python3') {
+        $c = Get-Command $n -ErrorAction SilentlyContinue
+        if ($c) { $cands.Add($c.Source) }
+    }
+    foreach ($v in '312', '311', '310', '39') {
+        $cands.Add("$env:ProgramFiles\Python$v\python.exe")
+        $cands.Add("$env:LOCALAPPDATA\Programs\Python\Python$v\python.exe")
+    }
+    foreach ($c in $cands) { if (Test-PythonExe $c) { return $c } }
+    return $null
+}
+
+$total = 7
+
+# ----------------------------------------------------------------------------
+Write-Host "=================================================================="
+Write-Host " Acer One 8 - unattended setup"
+Write-Host "=================================================================="
+
+# ----------------------------------------------------------------------------
+Step 1 $total 'Creating folders'
+foreach ($d in @($Tools, $Drivers, $Backup, $Stock)) {
+    New-Item -ItemType Directory -Path $d -Force | Out-Null
+}
+Ok 'tools\, tools\drivers\, tablet_backup\STOCK_ORIGINALS\'
+
+# ----------------------------------------------------------------------------
+Step 2 $total 'Python 3.9-3.12'
 Refresh-EnvPath
-$pyCmd = Get-Command python -ErrorAction SilentlyContinue
+$PyExe = Find-Python
+if (-not $PyExe) {
+    Info 'No suitable Python found, installing Python 3.11 for all users'
+    $installed = $false
 
-if (-not $pyCmd) {
-    Write-Host "  Python not detected. Downloading official standalone installer from python.org..." -ForegroundColor Cyan
-    $pyArch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "win32" }
-    $pyUrl = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-$pyArch.exe"
-    $pyInstaller = "tools\python-installer.exe"
-    
-    Write-Host "  Downloading Python 3.11 (~25 MB)..." -ForegroundColor Gray
-    Invoke-WebRequest -Uri $pyUrl -OutFile $pyInstaller
-    
-    Write-Host "  Installing Python silently into user profile (no UAC / admin needed)..." -ForegroundColor Gray
-    $installArgs = "/quiet InstallAllUsers=0 PrependPath=1 Include_pip=1 Include_test=0 SimpleInstall=1"
-    $proc = Start-Process -FilePath $pyInstaller -ArgumentList $installArgs -Wait -PassThru
-    
-    Remove-Item -Path $pyInstaller -Force -ErrorAction SilentlyContinue
-    Refresh-EnvPath
-    $pyCmd = Get-Command python -ErrorAction SilentlyContinue
-}
-
-if (-not $pyCmd) {
-    # Direct check fallback in AppData
-    $directPy = "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe"
-    if (Test-Path $directPy) {
-        $env:Path = "$env:LOCALAPPDATA\Programs\Python\Python311;$env:LOCALAPPDATA\Programs\Python\Python311\Scripts;$env:Path"
-        $pyCmd = Get-Command python -ErrorAction SilentlyContinue
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        try {
+            Info 'Trying winget'
+            & winget install -e --id Python.Python.3.11 --scope machine --silent `
+                --accept-source-agreements --accept-package-agreements
+            Refresh-EnvPath
+            if (Find-Python) { $installed = $true }
+        } catch { Info "winget failed: $($_.Exception.Message)" }
     }
-}
 
-if ($pyCmd) {
-    $pyVer = python --version 2>&1
-    Write-Host "  ✓ Python ready: $pyVer" -ForegroundColor Green
-} else {
-    Write-Host "  ❌ Python installation failed. Please install Python 3.10+ manually." -ForegroundColor Red
-    exit 1
+    if (-not $installed) {
+        Info 'Falling back to the official python.org installer'
+        $installer = Join-Path $env:TEMP 'python-installer.exe'
+        Get-File $PythonUrl $installer
+        $p = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList `
+            '/quiet', 'InstallAllUsers=1', 'PrependPath=1', 'Include_test=0', 'Include_launcher=1'
+        Remove-Item $installer -Force -ErrorAction SilentlyContinue
+        if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+            throw "Python installer exited with code $($p.ExitCode)"
+        }
+        Refresh-EnvPath
+    }
+    $PyExe = Find-Python
 }
+if (-not $PyExe) { throw 'Python install failed. Install Python 3.11 manually and re-run this script.' }
+Ok "Using $PyExe  ($(& $PyExe --version))"
 
-# 3. Download Android SDK Platform-Tools (ADB & Fastboot)
-Write-Host "`n[3/6] Setting up Android SDK Platform-Tools (ADB & Fastboot)..." -ForegroundColor Yellow
-$AdbExe = "tools\platform-tools\adb.exe"
+# ----------------------------------------------------------------------------
+Step 3 $total 'Android platform-tools (adb / fastboot)'
+$AdbExe = Join-Path $Tools 'platform-tools\adb.exe'
 if (-not (Test-Path $AdbExe)) {
-    Write-Host "  Downloading Platform-Tools..." -ForegroundColor Gray
-    $PToolsZip = "tools\platform-tools.zip"
-    Invoke-WebRequest -Uri "https://dl.google.com/android/repository/platform-tools-latest-windows.zip" -OutFile $PToolsZip
-    Write-Host "  Extracting Platform-Tools..." -ForegroundColor Gray
-    Expand-Archive -Path $PToolsZip -DestinationPath "tools" -Force
-    Remove-Item -Path $PToolsZip -Force -ErrorAction SilentlyContinue
-    Write-Host "  ✓ Platform-Tools extracted to tools\platform-tools\" -ForegroundColor Green
-} else {
-    Write-Host "  ✓ Platform-Tools already present." -ForegroundColor Green
+    $zip = Join-Path $Tools 'platform-tools.zip'
+    Get-File $PlatformToolsUrl $zip
+    Expand-Clean $zip $Tools
 }
-$env:Path = "$ScriptDir\tools\platform-tools;$env:Path"
+if (-not (Test-Path $AdbExe)) { throw 'platform-tools extraction failed' }
+Ok 'platform-tools ready'
 
-# 4. Download Google Windows USB Driver & Zadig Driver Installer
-Write-Host "`n[4/6] Downloading drivers and tools..." -ForegroundColor Yellow
+# ----------------------------------------------------------------------------
+Step 4 $total 'USB drivers (UsbDk, Google USB driver, Zadig fallback)'
 
-# Google Windows USB Driver
-$WinUsbInf = "tools\drivers\usb_driver\android_winusb.inf"
-if (-not (Test-Path $WinUsbInf)) {
-    Write-Host "  Downloading Google USB Driver ZIP..." -ForegroundColor Gray
-    $DriverZip = "tools\usb_driver.zip"
-    Invoke-WebRequest -Uri "https://dl.google.com/android/repository/usb_driver_r13-windows.zip" -OutFile $DriverZip
-    Expand-Archive -Path $DriverZip -DestinationPath "tools\drivers" -Force
-    Remove-Item -Path $DriverZip -Force -ErrorAction SilentlyContinue
-    Write-Host "  ✓ Google USB Driver extracted to tools\drivers\usb_driver\" -ForegroundColor Green
-} else {
-    Write-Host "  ✓ Google USB Driver already present." -ForegroundColor Green
-}
-
-# Zadig 2.9 (MediaTek Preloader & BootROM Driver Switcher)
-$ZadigExe = "tools\zadig-2.9.exe"
-if (-not (Test-Path $ZadigExe)) {
-    Write-Host "  Downloading Zadig 2.9..." -ForegroundColor Gray
-    Invoke-WebRequest -Uri "https://github.com/pbatard/libwdi/releases/download/v1.5.1/zadig-2.9.exe" -OutFile $ZadigExe
-    Write-Host "  ✓ Zadig downloaded to tools\zadig-2.9.exe" -ForegroundColor Green
-} else {
-    Write-Host "  ✓ Zadig already present." -ForegroundColor Green
-}
-
-# 5. Setup mtkclient (Direct ZIP download - No Git required!)
-Write-Host "`n[5/6] Setting up mtkclient..." -ForegroundColor Yellow
-$MtkDir = "tools\mtkclient"
-if (-not (Test-Path "$MtkDir\mtk.py")) {
-    Write-Host "  Downloading mtkclient archive from GitHub..." -ForegroundColor Gray
-    $MtkZip = "tools\mtkclient.zip"
-    Invoke-WebRequest -Uri "https://github.com/bkerler/mtkclient/archive/refs/heads/main.zip" -OutFile $MtkZip
-    Write-Host "  Extracting mtkclient..." -ForegroundColor Gray
-    Expand-Archive -Path $MtkZip -DestinationPath "tools" -Force
-    Remove-Item -Path $MtkZip -Force -ErrorAction SilentlyContinue
-    if (Test-Path "tools\mtkclient-main") {
-        if (Test-Path $MtkDir) { Remove-Item -Path $MtkDir -Recurse -Force }
-        Move-Item -Path "tools\mtkclient-main" -Destination $MtkDir -Force
+# UsbDk (non-fatal: mtkclient may still work with another driver)
+try {
+    $usbdkInstalled = $false
+    foreach ($key in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+                     'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*') {
+        if (Get-ItemProperty $key -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like 'UsbDk*' }) { $usbdkInstalled = $true }
     }
-    Write-Host "  ✓ mtkclient downloaded and extracted." -ForegroundColor Green
+    if ($usbdkInstalled) {
+        Ok 'UsbDk already installed'
+    } else {
+        $msi = Join-Path $env:TEMP 'UsbDk.msi'
+        Get-File $UsbDkUrl $msi
+        $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msi`" /qn /norestart"
+        Remove-Item $msi -Force -ErrorAction SilentlyContinue
+        if ($p.ExitCode -eq 0)         { Ok 'UsbDk installed' }
+        elseif ($p.ExitCode -eq 3010)  { Ok 'UsbDk installed (reboot recommended before first dump)' ; $Warnings.Add('Reboot recommended for UsbDk.') }
+        else                           { Warn "UsbDk installer exit code $($p.ExitCode)" }
+    }
+} catch { Warn "UsbDk step failed: $($_.Exception.Message)" }
+
+# Google USB driver (non-fatal)
+try {
+    $inf = Join-Path $Drivers 'usb_driver\android_winusb.inf'
+    if (-not (Test-Path $inf)) {
+        $zip = Join-Path $Tools 'usb_driver.zip'
+        Get-File $GoogleDriverUrl $zip
+        Expand-Clean $zip $Drivers
+    }
+    if (Test-Path $inf) {
+        & pnputil.exe /add-driver $inf /install | Out-Null
+        Ok 'Google USB driver staged'
+    } else { Warn 'Google USB driver inf not found after extraction' }
+} catch { Warn "Google USB driver step failed: $($_.Exception.Message)" }
+
+# Zadig (download only, never launched)
+try {
+    $zadig = Join-Path $Tools 'zadig-2.9.exe'
+    if (-not (Test-Path $zadig)) { Get-File $ZadigUrl $zadig }
+    Ok 'Zadig downloaded (fallback only, not launched)'
+} catch { Warn "Zadig download failed: $($_.Exception.Message)" }
+
+# ----------------------------------------------------------------------------
+Step 5 $total 'mtkclient'
+$MtkEntry = Join-Path $MtkDir 'mtk.py'
+if (-not (Test-Path $MtkEntry)) {
+    $zip = Join-Path $Tools 'mtkclient.zip'
+    $tmp = Join-Path $Tools '_mtk_extract'
+    if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+    Get-File $MtkZipUrl $zip
+    Expand-Clean $zip $tmp
+    $inner = Get-ChildItem $tmp -Directory | Select-Object -First 1
+    if (-not $inner) { throw 'mtkclient archive layout unexpected' }
+    if (Test-Path $MtkDir) { Remove-Item $MtkDir -Recurse -Force }
+    Move-Item $inner.FullName $MtkDir
+    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+}
+if (-not (Test-Path $MtkEntry)) { throw 'mtkclient download failed' }
+Ok "mtkclient ready (ref: $MtkRef)"
+
+$PatchSrc = Join-Path $Root 'mtk_preloader.py'
+$PatchDst = Join-Path $MtkDir 'mtkclient\Library\mtk_preloader.py'
+if (Test-Path $PatchSrc) {
+    if (Test-Path $PatchDst) {
+        $bak = "$PatchDst.orig"
+        if (-not (Test-Path $bak)) { Copy-Item $PatchDst $bak -Force }
+    }
+    Copy-Item $PatchSrc $PatchDst -Force
+    Ok 'Patched mtk_preloader.py applied (original saved as .orig)'
 } else {
-    Write-Host "  ✓ mtkclient already present." -ForegroundColor Green
+    Warn 'mtk_preloader.py not found next to this script; patch NOT applied'
 }
 
-# Apply patched mtk_preloader.py
-if (Test-Path "mtk_preloader.py") {
-    Write-Host "  Applying patched mtk_preloader.py to tools\mtkclient..." -ForegroundColor Gray
-    Copy-Item -Path "mtk_preloader.py" -Destination "tools\mtkclient\mtkclient\Library\mtk_preloader.py" -Force
-    Write-Host "  ✓ Modified mtk_preloader.py applied." -ForegroundColor Green
+# ----------------------------------------------------------------------------
+Step 6 $total 'Python virtual environment and dependencies'
+if (-not (Test-Path $VenvPy)) {
+    & $PyExe -m venv $Venv
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $VenvPy)) { throw 'venv creation failed' }
+}
+& $VenvPy -m pip install --upgrade pip setuptools wheel --quiet --disable-pip-version-check
+if ($LASTEXITCODE -ne 0) { Warn 'pip self-upgrade failed, continuing' }
+
+$req = Join-Path $MtkDir 'requirements.txt'
+$reqOk = $false
+if (Test-Path $req) {
+    Info 'Installing mtkclient requirements.txt (can take a few minutes)'
+    & $VenvPy -m pip install --quiet --disable-pip-version-check -r $req
+    if ($LASTEXITCODE -eq 0) { $reqOk = $true }
+    else { Warn 'requirements.txt install failed, trying core packages only' }
+}
+if (-not $reqOk) {
+    & $VenvPy -m pip install --quiet --disable-pip-version-check `
+        pycryptodomex pyusb pyserial colorama pyfdt fusepy capstone keystone-engine
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to install Python dependencies' }
 }
 
-# 6. Configure Python Virtual Environment & Install Dependencies
-Write-Host "`n[6/6] Configuring Python virtual environment..." -ForegroundColor Yellow
-$VenvPython = "$MtkDir\.venv\Scripts\python.exe"
-$VenvPip    = "$MtkDir\.venv\Scripts\pip.exe"
+$check = "import usb.core, serial, colorama; from Cryptodome.Cipher import AES; print('OK')"
+$res = & $VenvPy -c $check
+if (("$res").Trim() -ne 'OK') { throw 'Dependency verification failed' }
+Ok 'Dependencies installed and verified'
 
-if (-not (Test-Path $VenvPython)) {
-    Write-Host "  Creating isolated virtual environment..." -ForegroundColor Gray
-    python -m venv "$MtkDir\.venv"
-}
-
-Write-Host "  Installing required libraries (pycryptodomex, pyusb, pyserial, colorama)..." -ForegroundColor Gray
-& $VenvPython -m pip install --upgrade pip --quiet
-& $VenvPip install --quiet pycryptodomex pyusb pyserial colorama
-
-# Verify Cryptodome import
-$VerifyCode = "from Cryptodome.Cipher import AES; import usb.core; print('OK')"
-$VerifyResult = & $VenvPython -c $VerifyCode 2>&1
-if ($VerifyResult -match "OK") {
-    Write-Host "  ✓ Python virtual environment verified!" -ForegroundColor Green
-} else {
-    Write-Host "  ❌ Failed to verify Python packages: $VerifyResult" -ForegroundColor Red
-    exit 1
-}
-
-# Generate 1-click dump_windows.bat
-$DumpBatContent = @"
+# ----------------------------------------------------------------------------
+Step 7 $total 'Generating dump_windows.bat'
+$bat = @'
 @echo off
+setlocal
 cd /d "%~dp0"
+
 echo ==========================================================
-echo  Starting MediaTek Live Partition Dump
-echo  1. Power OFF your tablet completely.
-echo  2. Hold BOTH Volume Up + Volume Down (no Power button).
+echo  MediaTek read-only partition dump (slots A and B)
+echo  1. Power the tablet completely OFF.
+echo  2. Hold Volume Up + Volume Down (not Power).
 echo  3. Plug in the USB cable while holding both buttons.
 echo ==========================================================
-tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r "boot_b,init_boot_b,vbmeta_b" "tablet_backup\boot_b.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_b.img" --skipwdt
-if exist tablet_backup\boot_b.img (
-    copy /y tablet_backup\*.img tablet_backup\STOCK_ORIGINALS\ >nul
+
+if not exist tablet_backup mkdir tablet_backup
+if not exist tablet_backup\STOCK_ORIGINALS mkdir tablet_backup\STOCK_ORIGINALS
+
+tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
+if errorlevel 1 (
     echo.
-    echo ==========================================================
-    echo Stock partitions saved safely to tablet_backup\STOCK_ORIGINALS\
-    echo ==========================================================
+    echo Dump failed. Check the cable, button combo and driver, then retry.
+    pause
+    exit /b 1
 )
+
+REM Copy to STOCK_ORIGINALS without overwriting anything already there.
+for %%f in (tablet_backup\*.img) do (
+    if not exist "tablet_backup\STOCK_ORIGINALS\%%~nxf" copy "%%f" "tablet_backup\STOCK_ORIGINALS\" >nul
+)
+
+echo.
+echo ==========================================================
+echo  Done. Stock copies are in tablet_backup\STOCK_ORIGINALS\
+echo ==========================================================
 pause
-"@
-Set-Content -Path "dump_windows.bat" -Value $DumpBatContent -Force
+'@
+Set-Content -Path (Join-Path $Root 'dump_windows.bat') -Value $bat -Encoding ASCII -Force
+Ok 'dump_windows.bat written'
 
-# Generate 1-click dump_windows.ps1
-$DumpPs1Content = @"
-`$ScriptDir = Split-Path -Parent `$MyInvocation.MyCommand.Path
-Set-Location `$ScriptDir
-Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host " Starting MediaTek Live Partition Dump" -ForegroundColor Cyan
-Write-Host " 1. Power OFF your tablet completely."
-Write-Host " 2. Hold BOTH Volume Up + Volume Down (no Power button)."
-Write-Host " 3. Plug in the USB cable while holding both buttons."
-Write-Host "==========================================================" -ForegroundColor Cyan
-& "tools\mtkclient\.venv\Scripts\python.exe" tools\mtkclient\mtk.py r `"boot_b,init_boot_b,vbmeta_b`" `"tablet_backup\boot_b.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_b.img`" --skipwdt
-if (Test-Path "tablet_backup\boot_b.img") {
-    Copy-Item -Path "tablet_backup\*.img" -Destination "tablet_backup\STOCK_ORIGINALS\" -Force
-    Write-Host "`n==========================================================" -ForegroundColor Green
-    Write-Host "Stock partitions saved safely to tablet_backup\STOCK_ORIGINALS\" -ForegroundColor Green
-    Write-Host "==========================================================" -ForegroundColor Green
+# ----------------------------------------------------------------------------
+Write-Host ""
+Write-Host "=================================================================="
+Write-Host " Setup complete"
+Write-Host "=================================================================="
+if ($Warnings.Count -gt 0) {
+    Write-Host " Warnings:" -ForegroundColor Yellow
+    foreach ($w in $Warnings) { Write-Host "   - $w" -ForegroundColor Yellow }
 }
-"@
-Set-Content -Path "dump_windows.ps1" -Value $DumpPs1Content -Force
+Write-Host " Next: run dump_windows.bat, then connect the tablet in BROM mode."
+Write-Host " Log: $(Join-Path $Root 'setup.log')"
 
-Write-Host "`n==================================================================" -ForegroundColor Cyan
-Write-Host "🎉 Windows Setup Complete! (Zero user interaction required)" -ForegroundColor Green
-Write-Host "==================================================================" -ForegroundColor Cyan
-Write-Host "`nDRIVER CONFIGURATION INSTRUCTIONS (REQUIRED ONCE):" -ForegroundColor Yellow
-Write-Host "1. Launch Zadig by double-clicking: tools\zadig-2.9.exe"
-Write-Host "2. In Zadig, click 'Options' -> check 'List All Devices'."
-Write-Host "3. Power OFF your tablet. Hold Volume Up + Volume Down and plug in USB."
-Write-Host "4. Look for 'MediaTek PreLoader USB VCOM Port' or 'MTK USB Port' (VID: 0E8D)."
-Write-Host "5. Under the target driver, select 'libusb-win32' (or 'WinUSB') and click 'Replace Driver'."
-Write-Host "`nWhen ready, simply double-click 'dump_windows.bat' to dump your live partitions!" -ForegroundColor Cyan
+try { Stop-Transcript | Out-Null } catch {}
+exit 0

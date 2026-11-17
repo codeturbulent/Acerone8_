@@ -102,11 +102,15 @@ When dumping partitions with `mtkclient`, modern Helio G85 preloaders trigger tw
 Whether you are on a fresh Windows machine or Linux, you do not need to hunt down drivers, Python packages, or exploit repositories manually. The setup script configures everything in one go.
 
 #### 1. Clone or Download This Repository
-```bash
-git clone https://github.com/codeturbulent/Acerone8_.git
-cd Acerone8_
-```
-*(On Windows without Git: Click **Code > Download ZIP** on GitHub and extract the folder).*
+- **Via Git (Terminal / Command Prompt):**
+  ```bash
+  git clone https://github.com/codeturbulent/Acerone8_.git
+  cd Acerone8_
+  ```
+
+- **Direct ZIP Download (No Git needed - Click to Download):**  
+  👉 **[📥 Download Repository ZIP (main.zip)](https://github.com/codeturbulent/Acerone8_/archive/refs/heads/main.zip)**  
+  *(Extract the downloaded `.zip` file to your computer and open the folder).*
 
 ---
 

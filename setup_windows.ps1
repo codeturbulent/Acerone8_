@@ -34,7 +34,7 @@ function Refresh-EnvPath {
     $env:Path    = "$machinePath;$userPath"
 }
 
-# 2. Check and Install Git & Python (via winget or Scoop)
+# 2. Check and Install Git & Python (via Scoop or winget)
 Write-Host "`n[2/7] Checking for Python and Git..." -ForegroundColor Yellow
 
 $hasPython = [bool](Get-Command python -ErrorAction SilentlyContinue)
@@ -42,54 +42,56 @@ $hasGit    = [bool](Get-Command git -ErrorAction SilentlyContinue)
 
 if (-not $hasPython -or -not $hasGit) {
     Write-Host "  ⚠️ Missing prerequisites detected (Python: $hasPython, Git: $hasGit)." -ForegroundColor DarkYellow
-    
-    # Try winget first if available
-    $hasWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
-    $installedViaWinget = $false
+    Write-Host "  Installing missing tools via Scoop (shows real-time progress, no admin required)..." -ForegroundColor Cyan
 
-    if ($hasWinget) {
-        Write-Host "  Attempting automated installation via winget..." -ForegroundColor Cyan
-        try {
-            if (-not $hasPython) {
-                Write-Host "  Installing Python 3.11 via winget..." -ForegroundColor Gray
-                winget install -e --id Python.Python.3.11 --accept-source-agreements --accept-package-agreements --silent
-            }
-            if (-not $hasGit) {
-                Write-Host "  Installing Git via winget..." -ForegroundColor Gray
-                winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements --silent
-            }
-            Refresh-EnvPath
-            $hasPython = [bool](Get-Command python -ErrorAction SilentlyContinue)
-            $hasGit    = [bool](Get-Command git -ErrorAction SilentlyContinue)
-            if ($hasPython -and $hasGit) {
-                $installedViaWinget = $true
-                Write-Host "  ✓ Python and Git installed successfully via winget!" -ForegroundColor Green
-            }
-        } catch {
-            Write-Host "  winget install encountered an issue, falling back to Scoop..." -ForegroundColor DarkYellow
-        }
-    }
-
-    # If winget was not available or failed, install via Scoop
-    if (-not $installedViaWinget -and (-not $hasPython -or -not $hasGit)) {
-        Write-Host "  Setting up Scoop package manager for Windows..." -ForegroundColor Cyan
+    $installedViaScoop = $false
+    try {
         Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-        
         $hasScoop = [bool](Get-Command scoop -ErrorAction SilentlyContinue)
         if (-not $hasScoop) {
+            Write-Host "  Bootstrapping Scoop package manager..." -ForegroundColor Gray
             Invoke-RestMethod -Uri https://get.scoop.it | Invoke-Expression
             Refresh-EnvPath
         }
 
         if (-not $hasPython) {
-            Write-Host "  Installing Python via Scoop..." -ForegroundColor Gray
+            Write-Host "  Installing Python..." -ForegroundColor Cyan
             scoop install python
         }
         if (-not $hasGit) {
-            Write-Host "  Installing Git via Scoop..." -ForegroundColor Gray
+            Write-Host "  Installing Git..." -ForegroundColor Cyan
             scoop install git
         }
         Refresh-EnvPath
+        $hasPython = [bool](Get-Command python -ErrorAction SilentlyContinue)
+        $hasGit    = [bool](Get-Command git -ErrorAction SilentlyContinue)
+        if ($hasPython -and $hasGit) {
+            $installedViaScoop = $true
+            Write-Host "  ✓ Python and Git installed successfully via Scoop!" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "  Scoop install encountered an issue, trying winget fallback..." -ForegroundColor DarkYellow
+    }
+
+    # Fallback to winget if Scoop didn't finish
+    if (-not $installedViaScoop -and (-not $hasPython -or -not $hasGit)) {
+        $hasWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
+        if ($hasWinget) {
+            Write-Host "  Attempting installation via winget (with progress)..." -ForegroundColor Cyan
+            try {
+                if (-not $hasPython) {
+                    Write-Host "  Installing Python via winget..." -ForegroundColor Gray
+                    winget install -e --id Python.Python.3.11 --accept-source-agreements --accept-package-agreements
+                }
+                if (-not $hasGit) {
+                    Write-Host "  Installing Git via winget..." -ForegroundColor Gray
+                    winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements
+                }
+                Refresh-EnvPath
+            } catch {
+                Write-Host "  winget install encountered an error: $_" -ForegroundColor DarkYellow
+            }
+        }
     }
 }
 

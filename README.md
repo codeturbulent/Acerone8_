@@ -11,7 +11,7 @@
 ---
 
 ## 📑 Table of Contents
-0. [Step 0: Clone This Repository](#step-0-clone-this-repository)
+0. [Step 0: One-Click Environment Setup (Fresh PC: Windows & Linux)](#step-0-one-click-environment-setup-fresh-pc-windows--linux)
 1. [End-to-End Workflow Diagram](#-end-to-end-workflow-diagram)
 2. [Device Architecture & Profile](#-device-architecture--profile)
 3. [Key Discoveries & Low-Level Fixes](#-key-discoveries--low-level-fixes)
@@ -88,13 +88,56 @@ When dumping partitions with `mtkclient`, modern Helio G85 preloaders trigger tw
 > - **After 2nd Reset (Bootloader Unlock):** Skip the internet setup again ("Set up offline" / "Skip").
 > - **Keep Wi-Fi OFF** until you have completed **Step 6 (`./block_mdm.sh`)**.
 
-### Step 0: Clone This Repository (or Setup Workspace)
-Clone this repository to your computer so you have the reference files and a clean workspace:
+### Step 0: One-Click Environment Setup (Fresh PC: Windows & Linux)
+Whether you are on a fresh Windows machine or Linux, you do not need to hunt down drivers, Python packages, or exploit repositories manually. The setup script configures everything in one go.
 
+#### 1. Clone or Download This Repository
 ```bash
 git clone https://github.com/codeturbulent/Acerone8_.git
 cd Acerone8_
 ```
+*(On Windows without Git: Click **Code > Download ZIP** on GitHub and extract the folder).*
+
+---
+
+#### 2. Run the Automated Setup
+
+##### 🪟 Windows Setup:
+Double-click **`setup.bat`** (or right-click **`setup.ps1`** -> **Run with PowerShell**).
+
+> **What `setup.bat` / `setup.ps1` does automatically:**
+> - Detects if Python or Git are missing and installs them automatically (via **winget** or **Scoop**).
+> - Downloads **Android SDK Platform-Tools** (`adb` & `fastboot`) into `tools/platform-tools/`.
+> - Downloads **Google Windows USB Drivers** into `tools/drivers/usb_driver/`.
+> - Downloads **Zadig 2.9** driver installer into `tools/zadig-2.9.exe`.
+> - Clones **mtkclient** into `tools/mtkclient/` and automatically applies the modified **`mtk_preloader.py`** (eliminating the Helio G85 buffer crash).
+> - Creates a dedicated Python virtual environment (`.venv`) with all required libraries (`pycryptodomex`, `pyusb`, `pyserial`, `colorama`).
+
+##### 🐧 Linux Setup:
+Open a terminal inside the cloned folder and run:
+```bash
+chmod +x setup.sh && ./setup.sh
+```
+> **What `setup.sh` does automatically:**
+> - Installs missing distro packages (`python3`, `pip`, `venv`, `git`, `libusb`, `android-tools`).
+> - Downloads `mtkclient` into `tools/mtkclient/` and applies the patched `mtk_preloader.py`.
+> - Configures the Python virtual environment with `pycryptodomex` and `pyusb`.
+> - Installs `udev` rules (`/etc/udev/rules.d/51-edl.rules`) and stops `ModemManager` port conflicts.
+
+---
+
+#### 3. Windows Driver Setup via Zadig (Required ONCE for MediaTek BROM / Preloader)
+Windows requires the **libusb-win32** driver to communicate with MediaTek devices in low-level bootrom mode:
+1. Open **`tools\zadig-2.9.exe`**.
+2. Click **Options > List All Devices**.
+3. Turn **OFF** your tablet.
+4. Hold **BOTH Volume Up + Volume Down** (no Power button) and plug in the USB cable to your PC.
+5. In Zadig's top dropdown list, quickly select **`MediaTek PreLoader USB VCOM Port`** or **`MTK USB Port`** (Hardware ID: `VID 0E8D`).
+6. In the target driver box (green arrow), select **`libusb-win32`** (or **`WinUSB`**).
+7. Click **Replace Driver** (or **Install Driver**). Once complete, Windows is 100% ready for partition dumping!
+
+> [!TIP]
+> If your device shows an exclamation mark in Windows Device Manager during Fastboot or ADB, right-click it, choose **Update Driver > Browse my computer**, and select **`tools\drivers\usb_driver`** (Google USB Driver).
 
 ---
 
@@ -138,48 +181,39 @@ cd Acerone8_
 ### Step 3: Zero-Risk Partition Dump via mtkclient
 *Do not skip this step! Dumping your tablet's exact live partitions is your 100% guarantee against bricking.*
 
-#### 1. Create the Backup Directories
-From your repository root (`Acerone8_/`), create the storage directory:
-```bash
-mkdir -p tablet_backup/STOCK_ORIGINALS
-```
+#### Method A: 1-Click Automated Dump (Recommended)
+- **On Windows:** Double-click **`dump.bat`** (or run `.\dump.ps1` in PowerShell).
+- **On Linux:** Open a terminal and run:
+  ```bash
+  ./dump.sh
+  ```
 
-#### 2. Clone `mtkclient` & Set Up Environment
-```bash
-git clone https://github.com/bkerler/mtkclient
-cd mtkclient
-python3 -m venv .venv
-source .venv/bin/activate
-pip install pycryptodomex pyusb pyserial colorama
-```
+#### Method B: Manual Command Line Dump
+If you prefer running the command directly in your terminal from the `Acerone8_` root folder:
 
-> [!NOTE]
-> **Helio G85 Fix:** If `mtk.py` throws `struct.error: unpack requires a buffer of 4 bytes` when reading MEID, open `mtkclient/Library/mtk_preloader.py` and ensure `buf = self.usbread(4)` checks `if len(buf) == 4:` before calling `unpack(">I", buf)`.
+- **On Windows (Command Prompt / PowerShell):**
+  ```cmd
+  tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r boot_b,init_boot_b,vbmeta_b tablet_backup\boot_b.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_b.img --skipwdt
+  ```
 
-#### 3. Run the Partition Dump Command
+- **On Linux:**
+  ```bash
+  sudo tools/mtkclient/.venv/bin/python3 tools/mtkclient/mtk.py r boot_b,init_boot_b,vbmeta_b tablet_backup/boot_b.img,tablet_backup\init_boot_b.img,tablet_backup/vbmeta_b.img --skipwdt
+  ```
 
 > [!IMPORTANT]
-> **Use the Virtual Environment's Python with `sudo`:**
-> Running `sudo python3` strips your virtual environment and calls the global system Python, causing `ModuleNotFoundError: No module named 'Cryptodome'`. Always invoke `sudo .venv/bin/python3`:
+> **Why `sudo tools/mtkclient/.venv/bin/python3` on Linux?**
+> Running `sudo python3` strips virtual environment paths and invokes the system Python, triggering `ModuleNotFoundError: No module named 'Cryptodome'`. Calling the specific venv python path preserves all dependencies.
 
-```bash
-sudo .venv/bin/python3 mtk.py r boot_b,init_boot_b,vbmeta_b \
-    ../tablet_backup/boot_b.img,../tablet_backup/init_boot_b.img,../tablet_backup/vbmeta_b.img \
-    --skipwdt
-```
-
-4. **Connect the Tablet:**
-   - Power OFF your tablet completely.
-   - When the terminal displays `Waiting for PreLoader VCOM...`, hold **BOTH Volume Up + Volume Down** (no Power button) and plug in the USB cable. (If connection fails, try without holding buttons or holding Volume Up only).
-   - Keep it connected until all 3 partitions report `100.0% Read` and `All partitions were dumped`.
-
-#### 4. Save Immutable Copies of the Stock Originals
-Once the dump finishes, copy the untouched images into your backup archive and return to the main folder:
-```bash
-cp ../tablet_backup/*.img ../tablet_backup/STOCK_ORIGINALS/
-cd ..
-```
-*You now have `boot_b.img`, `init_boot_b.img`, and `vbmeta_b.img` safely stored in `tablet_backup/`!*
+#### Connecting the Tablet for Dumping:
+1. Power OFF your tablet completely.
+2. When the terminal prompts `Waiting for PreLoader VCOM, please reconnect mobile/iot device to brom mode`:
+   - Press and hold **BOTH Volume Up + Volume Down** (no Power button).
+   - Plug in the USB cable to your PC while continuing to hold both buttons.
+3. The script will detect the device in regular/brom mode:
+   - `CPU: MT6768/MT6769(Helio P65/G85 k68v1)`
+   - Keep the tablet still while it dumps `boot_b`, `init_boot_b`, and `vbmeta_b`.
+4. Once completed, the dumped images are saved in `tablet_backup/` and immutable copies are automatically archived in `tablet_backup/STOCK_ORIGINALS/`!
 
 ---
 
@@ -214,12 +248,25 @@ adb install -r tablet_backup/Magisk.apk
    ```
 
 #### 4. Pull the Patched Image to Your PC
-`adb pull` does not expand wildcards on the remote Android device. Dynamically resolve the filename and pull it back to your PC:
+Because `adb pull` does not expand remote wildcards, use the command for your OS:
 
-```bash
-PATCHED_FILE=$(adb shell "ls /sdcard/Download/magisk_patched-*.img" | tr -d '\r')
-adb pull "$PATCHED_FILE" tablet_backup/magisk_patched.img
-```
+- **On Linux / macOS:**
+  ```bash
+  PATCHED_FILE=$(adb shell "ls /sdcard/Download/magisk_patched-*.img" | tr -d '\r')
+  adb pull "$PATCHED_FILE" tablet_backup/magisk_patched.img
+  ```
+
+- **On Windows (PowerShell):**
+  ```powershell
+  $PATCHED_FILE = (adb shell "ls /sdcard/Download/magisk_patched-*.img").Trim()
+  adb pull "$PATCHED_FILE" tablet_backup/magisk_patched.img
+  ```
+
+- **On Windows (Command Prompt):**
+  ```cmd
+  for /f "tokens=*" %i in ('adb shell "ls /sdcard/Download/magisk_patched-*.img"') do adb pull "%i" tablet_backup/magisk_patched.img
+  ```
+
 *You now have `magisk_patched.img` saved in `tablet_backup/` ready for flashing!*
 
 ---

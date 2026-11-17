@@ -6,8 +6,10 @@ env/
 # Device backups and dumps
 tablet_backup/
 mtkclient/
+tools/
 *.img
 *.apk
+*.zip
 
 # Python caches & logs
 __pycache__/

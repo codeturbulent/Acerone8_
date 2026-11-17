@@ -13,13 +13,13 @@ echo " 🚀 Acer One 8 - Environment & Dependency Setup (Linux)"
 echo "=================================================================="
 
 # 1. Create directory structure
-echo "[1/6] Creating workspace directories..."
+echo "[1/7] Creating workspace directories..."
 mkdir -p tools
 mkdir -p tablet_backup/STOCK_ORIGINALS
 echo "  ✓ Directories created: tools/, tablet_backup/STOCK_ORIGINALS/"
 
 # 2. Package manager detection & dependency check
-echo "[2/6] Checking required system packages..."
+echo "[2/7] Checking required system packages..."
 MISSING_PKGS=()
 for cmd in python3 git; do
     if ! command -v "$cmd" &>/dev/null; then
@@ -48,10 +48,19 @@ else
 fi
 
 # 3. Android Platform-Tools (ensure present in tools/platform-tools)
-echo "[3/6] Setting up Android SDK Platform-Tools..."
+echo "[3/7] Setting up Android SDK Platform-Tools..."
 if [ ! -f "tools/platform-tools/adb" ] || [ ! -f "tools/platform-tools/fastboot" ]; then
     echo "  Downloading Android SDK Platform-Tools for Linux..."
-    curl -L -o tools/platform-tools.zip "https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
+    PLATFORM_TOOLS_URL="https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
+    if command -v curl &>/dev/null; then
+        curl -fL --retry 3 --connect-timeout 15 -o tools/platform-tools.zip "$PLATFORM_TOOLS_URL" 2>/dev/null || \
+        curl -k -fL -o tools/platform-tools.zip "$PLATFORM_TOOLS_URL"
+    elif command -v wget &>/dev/null; then
+        wget -q --show-progress -O tools/platform-tools.zip "$PLATFORM_TOOLS_URL"
+    else
+        echo "  ❌ Neither curl nor wget found. Please install curl or wget."
+        exit 1
+    fi
     unzip -q -o tools/platform-tools.zip -d tools/
     rm -f tools/platform-tools.zip
     chmod +x tools/platform-tools/adb tools/platform-tools/fastboot 2>/dev/null || true
@@ -61,7 +70,7 @@ else
 fi
 
 # 4. Clone or update mtkclient
-echo "[4/6] Setting up mtkclient..."
+echo "[4/7] Setting up mtkclient..."
 if [ ! -d "tools/mtkclient/.git" ]; then
     echo "  Cloning mtkclient repository into tools/mtkclient..."
     rm -rf tools/mtkclient
@@ -80,7 +89,7 @@ else
 fi
 
 # 5. Configure Python virtual environment & install requirements
-echo "[5/6] Setting up Python virtual environment..."
+echo "[5/7] Setting up Python virtual environment..."
 python3 -m venv tools/mtkclient/.venv
 tools/mtkclient/.venv/bin/python3 -m pip install --upgrade pip --quiet
 tools/mtkclient/.venv/bin/pip install --quiet pycryptodomex pyusb pyserial colorama
@@ -94,7 +103,7 @@ else
 fi
 
 # 6. Configure Linux udev rules & ModemManager
-echo "[6/6] Configuring udev rules & USB access..."
+echo "[6/7] Configuring udev rules & USB access..."
 UDEV_FILE="/etc/udev/rules.d/51-edl.rules"
 RULES_CONTENT='# MediaTek Preloader & BootROM
 SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", MODE="0666", GROUP="plugdev"
@@ -126,6 +135,27 @@ if systemctl is-active --quiet ModemManager 2>/dev/null; then
     else
         echo "  ℹ️  If ModemManager is active, stop it with: sudo systemctl stop ModemManager"
     fi
+fi
+
+# 7. Pre-download Magisk v31+ APK
+echo "[7/7] Setting up Magisk root package..."
+MAGISK_URL="https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk"
+MAGISK_FILE="tablet_backup/Magisk.apk"
+if [ ! -f "$MAGISK_FILE" ] || [ ! -s "$MAGISK_FILE" ]; then
+    echo "  Downloading Magisk v31.1 APK into tablet_backup/Magisk.apk..."
+    if command -v curl &>/dev/null; then
+        curl -fL --retry 3 --connect-timeout 15 -o "$MAGISK_FILE" "$MAGISK_URL" 2>/dev/null || \
+        curl -k -fL -o "$MAGISK_FILE" "$MAGISK_URL" 2>/dev/null || true
+    elif command -v wget &>/dev/null; then
+        wget -q --show-progress -O "$MAGISK_FILE" "$MAGISK_URL" 2>/dev/null || true
+    fi
+    if [ -f "$MAGISK_FILE" ] && [ -s "$MAGISK_FILE" ]; then
+        echo "  ✓ Magisk v31.1 APK ready in tablet_backup/Magisk.apk"
+    else
+        echo "  ⚠️ Magisk APK download could not complete automatically (can be placed in tablet_backup/Magisk.apk manually)"
+    fi
+else
+    echo "  ✓ Magisk v31.1 APK already present in tablet_backup/Magisk.apk"
 fi
 
 # Generate convenient dump_linux.sh runner script

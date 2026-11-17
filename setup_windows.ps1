@@ -57,6 +57,7 @@ $GoogleDriverUrl  = 'https://dl.google.com/android/repository/usb_driver_r13-win
 $ZadigUrl         = 'https://github.com/pbatard/libwdi/releases/download/v1.5.1/zadig-2.9.exe'
 $UsbDkUrl         = 'https://github.com/daynix/UsbDk/releases/download/v1.00-22/UsbDk_1.0.22_x64.msi'
 $PythonUrl        = 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe'
+$MagiskUrl        = 'https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk'
 $MtkRef           = 'main'      # set to a commit hash to pin
 $MtkZipUrl        = "https://github.com/bkerler/mtkclient/archive/$MtkRef.zip"
 $InstallGui       = $false      # PySide6 is large and not needed for the CLI
@@ -106,14 +107,25 @@ function Get-File([string]$Url, [string]$Out, [int]$MaxSec = 900) {
     for ($i = 1; $i -le 3; $i++) {
         try {
             if (Test-Path $Out) { Remove-Item $Out -Force }
+            $downloaded = $false
             if (Test-Path $curl) {
-                & $curl -L --fail -sS --retry 2 --connect-timeout 20 --max-time $MaxSec `
-                    --speed-limit 2000 --speed-time 60 -o $Out $Url
-                if ($LASTEXITCODE -ne 0) { throw "curl exit code $LASTEXITCODE" }
-            } else {
-                Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Out -TimeoutSec 300
+                try {
+                    & $curl -L --ssl-no-revoke --fail -sS --retry 2 --connect-timeout 20 --max-time $MaxSec `
+                        --speed-limit 2000 --speed-time 60 -o $Out $Url
+                    if ($LASTEXITCODE -eq 0 -and (Test-Path $Out) -and ((Get-Item $Out).Length -gt 0)) {
+                        $downloaded = $true
+                    }
+                } catch {
+                    Info "curl failed, attempting Invoke-WebRequest fallback..."
+                }
             }
-            if ((Test-Path $Out) -and ((Get-Item $Out).Length -gt 0)) { return }
+            if (-not $downloaded) {
+                Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Out -TimeoutSec 300
+                if ((Test-Path $Out) -and ((Get-Item $Out).Length -gt 0)) {
+                    $downloaded = $true
+                }
+            }
+            if ($downloaded) { return }
             throw 'empty download'
         } catch {
             Info "Attempt $i failed: $($_.Exception.Message)"
@@ -174,7 +186,7 @@ function Find-Python {
     return $null
 }
 
-$total = 7
+$total = 8
 
 try {
     Write-Host "=================================================================="
@@ -328,7 +340,23 @@ try {
     Ok 'Dependencies installed and verified'
 
     # ------------------------------------------------------------------------
-    Step 7 $total 'Generating dump_windows.bat'
+    Step 7 $total 'Magisk v31+ root package'
+    $MagiskApk = Join-Path $Backup 'Magisk.apk'
+    try {
+        if (-not (Test-Path $MagiskApk) -or ((Get-Item $MagiskApk).Length -eq 0)) {
+            Get-File $MagiskUrl $MagiskApk 300
+        }
+        if ((Test-Path $MagiskApk) -and ((Get-Item $MagiskApk).Length -gt 0)) {
+            Ok 'Magisk v31.1 APK ready in tablet_backup\Magisk.apk'
+        } else {
+            Warn 'Magisk APK download was empty (can be downloaded manually to tablet_backup\Magisk.apk)'
+        }
+    } catch {
+        Warn "Magisk APK download: $($_.Exception.Message)"
+    }
+
+    # ------------------------------------------------------------------------
+    Step 8 $total 'Generating dump_windows.bat'
     $bat = @'
 @echo off
 setlocal

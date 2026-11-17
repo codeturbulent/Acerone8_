@@ -132,6 +132,7 @@ setup_windows.bat
 
 > **What `setup_windows.bat` / `setup_windows.ps1` does automatically (100% unattended):**
 > - Directly downloads and extracts **Android SDK Platform-Tools** (`adb.exe` and `fastboot.exe`) into `tools\platform-tools\`.
+> - Pre-downloads the official **Magisk v31.1 APK** directly into `tablet_backup\Magisk.apk`.
 > - Detects suitable Python (3.9–3.12); if missing, silently installs Python 3.11 for all users.
 > - Installs **UsbDk** (low-level USB access layer used by `mtkclient` on Windows — eliminates manual driver swapping).
 > - Stages the **Google Windows USB Driver** via `pnputil` and downloads Zadig as fallback.
@@ -148,6 +149,7 @@ chmod +x setup_linux.sh && ./setup_linux.sh
 > **What `setup_linux.sh` does automatically:**
 > - Installs missing distro packages (`python3`, `pip`, `venv`, `git`, `libusb`, `android-tools`).
 > - Directly downloads and extracts **Android SDK Platform-Tools** (`adb` & `fastboot`) into `tools/platform-tools/`.
+> - Pre-downloads the official **Magisk v31.1 APK** directly into `tablet_backup/Magisk.apk`.
 > - Downloads `mtkclient` into `tools/mtkclient/` and applies the patched `mtk_preloader.py`.
 > - Configures the Python virtual environment with `pycryptodomex` and `pyusb`.
 > - Installs `udev` rules (`/etc/udev/rules.d/51-edl.rules`) and stops `ModemManager` port conflicts.
@@ -331,24 +333,28 @@ Make sure your tablet is powered ON, USB Debugging is enabled, and it is connect
   tools/platform-tools/adb push tablet_backup/init_boot_b.img /sdcard/Download/init_boot.img
   ```
 
-#### 2. Download & Install Magisk v31+ Directly
-From the `Acerone8_` root folder:
+#### 2. Install Pre-Downloaded Magisk v31+ APK
+*(Magisk v31.1 was automatically pre-downloaded into `tablet_backup/Magisk.apk` during Step 0 setup).*
+
+Install it onto your connected tablet directly from the `Acerone8_` root folder:
 
 - **Windows (Command Prompt):**
   ```cmd
-  curl -L -o tablet_backup\Magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk"
   tools\platform-tools\adb.exe install -r tablet_backup\Magisk.apk
   ```
 - **Windows (PowerShell):**
   ```powershell
-  curl.exe -L -o tablet_backup\Magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk"
   .\tools\platform-tools\adb.exe install -r tablet_backup\Magisk.apk
   ```
 - **Linux:**
   ```bash
-  curl -L -o tablet_backup/Magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk"
   tools/platform-tools/adb install -r tablet_backup/Magisk.apk
   ```
+
+> [!TIP]
+> **Manual Download Fallback:**  
+> If you ever need to re-download Magisk manually, you can download it directly from GitHub:  
+> 👉 **[📥 Download Magisk-v31.1.apk](https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk)** and place it into `tablet_backup/Magisk.apk`.
 
 #### 3. Patch `init_boot.img` Inside the Magisk App
 1. Open the newly installed **Magisk** app on your tablet screen.

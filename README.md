@@ -119,13 +119,14 @@ Whether you are on a fresh Windows machine or Linux, you do not need to hunt dow
 ##### 🪟 Windows Setup:
 Double-click **`setup_windows.bat`** (or right-click **`setup_windows.ps1`** -> **Run with PowerShell**).
 
-> **What `setup_windows.bat` / `setup_windows.ps1` does automatically:**
-> - Detects if Python or Git are missing and installs them automatically (via **winget** or **Scoop**).
+> **What `setup_windows.bat` / `setup_windows.ps1` does automatically (Zero interaction):**
+> - **Zero Prompts / No Admin Required:** Installs Python 3.11 silently into the user profile if missing.
+> - **No Git Required:** Downloads `mtkclient` directly from GitHub archive.
 > - Downloads **Android SDK Platform-Tools** (`adb` & `fastboot`) into `tools/platform-tools/`.
 > - Downloads **Google Windows USB Drivers** into `tools/drivers/usb_driver/`.
 > - Downloads **Zadig 2.9** driver installer into `tools/zadig-2.9.exe`.
-> - Clones **mtkclient** into `tools/mtkclient/` and automatically applies the modified **`mtk_preloader.py`** (eliminating the Helio G85 buffer crash).
-> - Creates a dedicated Python virtual environment (`.venv`) with all required libraries (`pycryptodomex`, `pyusb`, `pyserial`, `colorama`).
+> - Automatically applies the modified **`mtk_preloader.py`** (eliminating the Helio G85 buffer crash).
+> - Creates an isolated Python virtual environment (`.venv`) with all required libraries (`pycryptodomex`, `pyusb`, `pyserial`, `colorama`).
 
 ##### 🐧 Linux Setup:
 Open a terminal inside the cloned folder and run:

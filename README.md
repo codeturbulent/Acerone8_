@@ -41,16 +41,16 @@
 ```mermaid
 flowchart TD
     A["Tablet Powered Off"] --> B["Hardware Factory Reset<br/>(Factory Mode -> Clear Storage)"]
-    B --> C["Unlock Bootloader in Fastboot<br/>(fastboot flashing unlock)"]
+    B --> C["Unlock Bootloader in Fastboot<br/>(tools/platform-tools/fastboot flashing unlock)"]
     C --> D["Preloader Dump via mtkclient<br/>(boot_b.img, init_boot_b.img, vbmeta_b.img)"]
     D --> E["Save Untouched Stock Originals<br/>(Failsafe in STOCK_ORIGINALS/)"]
-    E --> F["Push init_boot_b.img to Tablet via ADB"]
+    E --> F["Push init_boot_b.img to Tablet via ADB<br/>(tools/platform-tools/adb push ...)"]
     F --> G["Download & Install Magisk v31+ APK"]
     G --> H["Patch init_boot.img in Magisk App<br/>(Produces magisk_patched.img)"]
-    H --> I["Pull Patched Image to PC via ADB"]
-    I --> J["Flash Patched init_boot via Fastboot<br/>(fastboot flash init_boot_b magisk_patched.img)"]
+    H --> I["Pull Patched Image to PC via ADB<br/>(tools/platform-tools/adb pull ...)"]
+    I --> J["Flash Patched init_boot via Fastboot<br/>(tools/platform-tools/fastboot flash init_boot_b ...)"]
     J --> K["Reboot & Verify Full Root (su)"]
-    K --> L["Neutralize Zero-Touch / Tectoro MDM<br/>(Run ./block_mdm.sh)"]
+    K --> L["Neutralize Zero-Touch / Tectoro MDM<br/>(Run block_mdm.bat or ./block_mdm.sh)"]
     L --> M["🎉 Safe Personal Tablet with Root!"]
 ```
 
@@ -96,10 +96,16 @@ When dumping partitions with `mtkclient`, modern Helio G85 preloaders trigger tw
 > 
 > - **After 1st Reset (Factory Mode):** Skip the internet setup ("Set up offline" / "Skip").
 > - **After 2nd Reset (Bootloader Unlock):** Skip the internet setup again ("Set up offline" / "Skip").
-> - **Keep Wi-Fi OFF** until you have completed **Step 6 (`./block_mdm.sh`)**.
+> - **Keep Wi-Fi OFF** until you have completed **Step 6 (`block_mdm.bat` / `./block_mdm.sh`)**.
+
+---
 
 ### Step 0: One-Click Environment Setup (Fresh PC: Windows & Linux)
-Whether you are on a fresh Windows machine or Linux, you do not need to hunt down drivers, Python packages, or exploit repositories manually. The setup script configures everything in one go.
+Whether you are on a fresh Windows machine or Linux, you do not need to install global ADB, Fastboot, or hunt down drivers manually. The setup scripts download and extract all dependencies directly into the local `tools/` directory.
+
+> [!IMPORTANT]
+> **Zero Directory Changes (`cd` Rule):**  
+> Open a **single terminal session** in the `Acerone8_` root folder. **Never run `cd` during the entire guide.** Every command in this walkthrough is fully self-contained and copy-pasteable from the root directory using local relative paths (e.g. `tools\platform-tools\adb.exe` on Windows or `tools/platform-tools/adb` on Linux).
 
 #### 1. Clone or Download This Repository
 - **Via Git (Terminal / Command Prompt):**
@@ -107,37 +113,45 @@ Whether you are on a fresh Windows machine or Linux, you do not need to hunt dow
   git clone https://github.com/codeturbulent/Acerone8_.git
   cd Acerone8_
   ```
+  *(Stay in `Acerone8_` for the rest of the guide — no further directory changes are needed).*
 
 - **Direct ZIP Download (No Git needed - Click to Download):**  
   👉 **[📥 Download Repository ZIP (main.zip)](https://github.com/codeturbulent/Acerone8_/archive/refs/heads/main.zip)**  
-  *(Extract the downloaded `.zip` file to your computer and open the folder).*
+  *(Extract the downloaded `.zip` file to your computer and open a terminal inside the extracted `Acerone8_` folder).*
 
 ---
 
 #### 2. Run the Automated Setup
 
 ##### 🪟 Windows Setup:
-Right-click **`setup_windows.bat`** and select **Run as administrator** (or double-click it; it will request elevation).
+From your Command Prompt or PowerShell in `Acerone8_`, run:
+```cmd
+setup_windows.bat
+```
+*(Or double-click **`setup_windows.bat`**; it requests elevation automatically).*
 
-> **What `setup_windows.bat` / `setup_windows.ps1` does automatically (100% unattended, safe to re-run):**
+> **What `setup_windows.bat` / `setup_windows.ps1` does automatically (100% unattended):**
+> - Directly downloads and extracts **Android SDK Platform-Tools** (`adb.exe` and `fastboot.exe`) into `tools\platform-tools\`.
 > - Detects suitable Python (3.9–3.12); if missing, silently installs Python 3.11 for all users.
-> - Downloads and extracts **Android SDK Platform-Tools** (`adb` & `fastboot`).
-> - Installs **UsbDk** (low-level USB access layer used by `mtkclient` on Windows — eliminates the need for manual driver swapping!).
+> - Installs **UsbDk** (low-level USB access layer used by `mtkclient` on Windows — eliminates manual driver swapping).
 > - Stages the **Google Windows USB Driver** via `pnputil` and downloads Zadig as fallback.
 > - Downloads **mtkclient** archive (no Git needed) and applies the modified **`mtk_preloader.py`** patch.
-> - Creates isolated Python virtual environment (`.venv`), installs requirements, verifies imports, and logs all steps to `setup.log`.
-> - Generates **`dump_windows.bat`** (read-only live partition dump for both slots A & B).
+> - Creates isolated Python virtual environment (`tools\mtkclient\.venv`), installs requirements, and verifies imports.
+> - Generates **`dump_windows.bat`** and provides **`block_mdm.bat`** for 1-click execution.
 
 ##### 🐧 Linux Setup:
-Open a terminal inside the cloned folder and run:
+From your terminal in the `Acerone8_` root folder, run:
 ```bash
 chmod +x setup_linux.sh && ./setup_linux.sh
 ```
+
 > **What `setup_linux.sh` does automatically:**
 > - Installs missing distro packages (`python3`, `pip`, `venv`, `git`, `libusb`, `android-tools`).
+> - Directly downloads and extracts **Android SDK Platform-Tools** (`adb` & `fastboot`) into `tools/platform-tools/`.
 > - Downloads `mtkclient` into `tools/mtkclient/` and applies the patched `mtk_preloader.py`.
 > - Configures the Python virtual environment with `pycryptodomex` and `pyusb`.
 > - Installs `udev` rules (`/etc/udev/rules.d/51-edl.rules`) and stops `ModemManager` port conflicts.
+> - Generates **`dump_linux.sh`** and **`block_mdm.sh`**.
 
 ---
 
@@ -172,25 +186,71 @@ Thanks to **UsbDk** being installed automatically by `setup_windows.bat`, Window
 2. In **Settings > System > Developer options**:
    - Toggle **OEM unlocking** -> ON.
    - Toggle **USB debugging** -> ON.
-3. Connect to PC and reboot to Fastboot:
-   ```bash
-   adb reboot bootloader
-   ```
-4. Unlock bootloader:
-   ```bash
-   fastboot flashing unlock
-   ```
-5. Press **Volume Up** on the tablet to confirm. Check unlock status:
-   ```bash
-   fastboot getvar unlocked
-   # Result: unlocked: yes
-   ```
-6. Reboot the tablet:
-   ```bash
-   fastboot reboot
-   ```
-7. **Setup Wizard (2nd Reset):** Unlocking the bootloader automatically factory resets the tablet a second time. When the setup wizard appears, again choose **"Set up offline"** / **Skip**. **DO NOT connect to Wi-Fi.**
-8. Re-enable **USB debugging** in Developer options so ADB can communicate with the tablet.
+3. Connect the tablet to your PC.
+4. From your terminal in the `Acerone8_` root folder, reboot into Fastboot:
+
+   - **Windows (Command Prompt):**
+     ```cmd
+     tools\platform-tools\adb.exe reboot bootloader
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     .\tools\platform-tools\adb.exe reboot bootloader
+     ```
+   - **Linux:**
+     ```bash
+     tools/platform-tools/adb reboot bootloader
+     ```
+
+5. Unlock bootloader:
+
+   - **Windows (Command Prompt):**
+     ```cmd
+     tools\platform-tools\fastboot.exe flashing unlock
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     .\tools\platform-tools\fastboot.exe flashing unlock
+     ```
+   - **Linux:**
+     ```bash
+     tools/platform-tools/fastboot flashing unlock
+     ```
+
+6. Press **Volume Up** on the tablet to confirm the unlock.
+7. Verify unlock status:
+
+   - **Windows (Command Prompt):**
+     ```cmd
+     tools\platform-tools\fastboot.exe getvar unlocked
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     .\tools\platform-tools\fastboot.exe getvar unlocked
+     ```
+   - **Linux:**
+     ```bash
+     tools/platform-tools/fastboot getvar unlocked
+     ```
+   *(Result should display: `unlocked: yes`).*
+
+8. Reboot the tablet:
+
+   - **Windows (Command Prompt):**
+     ```cmd
+     tools\platform-tools\fastboot.exe reboot
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     .\tools\platform-tools\fastboot.exe reboot
+     ```
+   - **Linux:**
+     ```bash
+     tools/platform-tools/fastboot reboot
+     ```
+
+9. **Setup Wizard (2nd Reset):** Unlocking the bootloader automatically factory resets the tablet a second time. When the setup wizard appears, again choose **"Set up offline"** / **Skip**. **DO NOT connect to Wi-Fi.**
+10. Re-enable **USB debugging** in Developer options so ADB can communicate with the tablet.
 
 ---
 
@@ -198,23 +258,35 @@ Thanks to **UsbDk** being installed automatically by `setup_windows.bat`, Window
 *Do not skip this step! Dumping your tablet's exact live partitions is your 100% guarantee against bricking.*
 
 #### Method A: 1-Click Automated Dump (Recommended)
-- **On Windows:** Double-click **`dump_windows.bat`** (or run `.\dump_windows.ps1` in PowerShell).
-- **On Linux:** Open a terminal and run:
+From your terminal in the `Acerone8_` root folder:
+
+- **Windows (Command Prompt / PowerShell):**
+  ```cmd
+  dump_windows.bat
+  ```
+  *(Or in PowerShell: `.\dump_windows.bat` or `.\dump_windows.ps1`)*
+
+- **Linux:**
   ```bash
   ./dump_linux.sh
   ```
 
 #### Method B: Manual Command Line Dump
-If you prefer running the command directly in your terminal from the `Acerone8_` root folder:
+If you prefer running the command manually from the `Acerone8_` root folder:
 
-- **On Windows (Command Prompt / PowerShell):**
+- **On Windows (Command Prompt):**
   ```cmd
   tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
   ```
 
+- **On Windows (PowerShell):**
+  ```powershell
+  .\tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r "boot_a,boot_b,init_boot_a,init_boot_b,vbmeta_a,vbmeta_b" "tablet_backup\boot_a.img,tablet_backup\boot_b.img,tablet_backup\init_boot_a.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_a.img,tablet_backup\vbmeta_b.img" --skipwdt
+  ```
+
 > [!TIP]
 > **Why are quotes (`"..."`) required around the commas in Windows?**
-> In Windows PowerShell and CMD, commas are treated as parameter and array separators. Without quotes, PowerShell splits `boot_a,boot_b,...` into separate arguments instead of passing it as a single comma-separated string to `mtkclient`, causing syntax/argument errors.
+> In Windows PowerShell and CMD, commas are treated as parameter separators. Without quotes, the shell splits `boot_a,boot_b,...` into separate arguments instead of passing it as a single comma-separated string to `mtkclient`.
 
 - **On Linux:**
   ```bash
@@ -226,17 +298,17 @@ If you prefer running the command directly in your terminal from the `Acerone8_`
 
 > [!IMPORTANT]
 > **Why `sudo tools/mtkclient/.venv/bin/python3` on Linux?**
-> Running `sudo python3` strips virtual environment paths and invokes the system Python, triggering `ModuleNotFoundError: No module named 'Cryptodome'`. Calling the specific venv python path preserves all dependencies.
+> Running bare `sudo python3` strips virtual environment paths and invokes system Python, triggering `ModuleNotFoundError: No module named 'Cryptodome'`. Calling the specific venv python path preserves all dependencies.
 
 #### Connecting the Tablet for Dumping:
 1. Power OFF your tablet completely.
 2. When the terminal prompts `Waiting for PreLoader VCOM, please reconnect mobile/iot device to brom mode`:
    - Press and hold **BOTH Volume Up + Volume Down** (no Power button).
    - Plug in the USB cable to your PC while continuing to hold both buttons.
-3. The script will detect the device in regular/brom mode:
+3. The script will detect the device:
    - `CPU: MT6768/MT6769(Helio P65/G85 k68v1)`
-   - Keep the tablet still while it dumps `boot_b`, `init_boot_b`, and `vbmeta_b`.
-4. Once completed, the dumped images are saved in `tablet_backup/` and immutable copies are automatically archived in `tablet_backup/STOCK_ORIGINALS/`!
+   - Keep the tablet still while it dumps `boot_a`, `boot_b`, `init_boot_a`, `init_boot_b`, `vbmeta_a`, and `vbmeta_b`.
+4. Once completed, the dumped images are saved in `tablet_backup/` and immutable stock copies are safely preserved in `tablet_backup/STOCK_ORIGINALS/`!
 
 ---
 
@@ -244,17 +316,39 @@ If you prefer running the command directly in your terminal from the `Acerone8_`
 *Because this device uses modern Android GKI (Generic Kernel Image) architecture, you must patch `init_boot`, NOT `boot`.*
 
 #### 1. Push the Stock `init_boot_b.img` to Tablet
-Make sure your tablet is powered ON, USB Debugging is enabled, and it is connected via USB:
-```bash
-adb push tablet_backup/init_boot_b.img /sdcard/Download/init_boot.img
-```
+Make sure your tablet is powered ON, USB Debugging is enabled, and it is connected via USB. From the `Acerone8_` root folder:
+
+- **Windows (Command Prompt):**
+  ```cmd
+  tools\platform-tools\adb.exe push tablet_backup\init_boot_b.img /sdcard/Download/init_boot.img
+  ```
+- **Windows (PowerShell):**
+  ```powershell
+  .\tools\platform-tools\adb.exe push tablet_backup\init_boot_b.img /sdcard/Download/init_boot.img
+  ```
+- **Linux:**
+  ```bash
+  tools/platform-tools/adb push tablet_backup/init_boot_b.img /sdcard/Download/init_boot.img
+  ```
 
 #### 2. Download & Install Magisk v31+ Directly
-Download the latest official Magisk APK using `curl` and install it onto your tablet:
-```bash
-curl -L -o tablet_backup/Magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk"
-adb install -r tablet_backup/Magisk.apk
-```
+From the `Acerone8_` root folder:
+
+- **Windows (Command Prompt):**
+  ```cmd
+  curl -L -o tablet_backup\Magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk"
+  tools\platform-tools\adb.exe install -r tablet_backup\Magisk.apk
+  ```
+- **Windows (PowerShell):**
+  ```powershell
+  curl.exe -L -o tablet_backup\Magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk"
+  .\tools\platform-tools\adb.exe install -r tablet_backup\Magisk.apk
+  ```
+- **Linux:**
+  ```bash
+  curl -L -o tablet_backup/Magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk"
+  tools/platform-tools/adb install -r tablet_backup/Magisk.apk
+  ```
 
 #### 3. Patch `init_boot.img` Inside the Magisk App
 1. Open the newly installed **Magisk** app on your tablet screen.
@@ -264,63 +358,112 @@ adb install -r tablet_backup/Magisk.apk
    - Navigate to your **Downloads** folder.
    - Tap on **`init_boot.img`**.
 5. Tap **LET'S GO!** in the top right corner.
-6. Magisk will unpack, hook, and repack the ramdisk. In a few seconds, it will print:
+6. Magisk unpacks, hooks, and repacks the ramdisk. In a few seconds, it prints:
    ```
    Output file is written to /storage/emulated/0/Download/magisk_patched-xxxx_xxxxx.img
    - All done!
    ```
 
 #### 4. Pull the Patched Image to Your PC
-Because `adb pull` does not expand remote wildcards, use the command for your OS:
+From the `Acerone8_` root folder:
 
-- **On Linux / macOS:**
-  ```bash
-  PATCHED_FILE=$(adb shell "ls /sdcard/Download/magisk_patched-*.img" | tr -d '\r')
-  adb pull "$PATCHED_FILE" tablet_backup/magisk_patched.img
-  ```
-
-- **On Windows (PowerShell):**
-  ```powershell
-  $PATCHED_FILE = (adb shell "ls /sdcard/Download/magisk_patched-*.img").Trim()
-  adb pull "$PATCHED_FILE" tablet_backup/magisk_patched.img
-  ```
-
-- **On Windows (Command Prompt):**
+- **Windows (Command Prompt):**
   ```cmd
-  for /f "tokens=*" %i in ('adb shell "ls /sdcard/Download/magisk_patched-*.img"') do adb pull "%i" tablet_backup/magisk_patched.img
+  for /f "tokens=*" %i in ('tools\platform-tools\adb.exe shell "ls /sdcard/Download/magisk_patched-*.img"') do tools\platform-tools\adb.exe pull "%i" tablet_backup\magisk_patched.img
   ```
 
-*You now have `magisk_patched.img` saved in `tablet_backup/` ready for flashing!*
+- **Windows (PowerShell):**
+  ```powershell
+  $PATCHED_FILE = (.\tools\platform-tools\adb.exe shell "ls /sdcard/Download/magisk_patched-*.img").Trim()
+  .\tools\platform-tools\adb.exe pull "$PATCHED_FILE" tablet_backup\magisk_patched.img
+  ```
+
+- **Linux:**
+  ```bash
+  PATCHED_FILE=$(tools/platform-tools/adb shell "ls /sdcard/Download/magisk_patched-*.img" | tr -d '\r')
+  tools/platform-tools/adb pull "$PATCHED_FILE" tablet_backup/magisk_patched.img
+  ```
+
+*You now have `magisk_patched.img` saved in `tablet_backup\` ready for flashing!*
 
 ---
 
-### Step 5: Flashing Patched Image via Fastboot
-1. Reboot the tablet into bootloader (Fastboot mode):
-   ```bash
-   adb reboot bootloader
-   ```
+### Step 5: Flashing via Fastboot
+
+1. Reboot the tablet into bootloader (Fastboot mode) from the `Acerone8_` root folder:
+
+   - **Windows (Command Prompt):**
+     ```cmd
+     tools\platform-tools\adb.exe reboot bootloader
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     .\tools\platform-tools\adb.exe reboot bootloader
+     ```
+   - **Linux:**
+     ```bash
+     tools/platform-tools/adb reboot bootloader
+     ```
+
 2. Flash the patched image into the active `init_boot` slot (`init_boot_b`):
-   ```bash
-   fastboot flash init_boot_b tablet_backup/magisk_patched.img
-   ```
+
+   - **Windows (Command Prompt):**
+     ```cmd
+     tools\platform-tools\fastboot.exe flash init_boot_b tablet_backup\magisk_patched.img
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     .\tools\platform-tools\fastboot.exe flash init_boot_b tablet_backup\magisk_patched.img
+     ```
+   - **Linux:**
+     ```bash
+     tools/platform-tools/fastboot flash init_boot_b tablet_backup/magisk_patched.img
+     ```
+
 3. Reboot the tablet into Android:
-   ```bash
-   fastboot reboot
-   ```
+
+   - **Windows (Command Prompt):**
+     ```cmd
+     tools\platform-tools\fastboot.exe reboot
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     .\tools\platform-tools\fastboot.exe reboot
+     ```
+   - **Linux:**
+     ```bash
+     tools/platform-tools/fastboot reboot
+     ```
+
 4. **Finalize Magisk Setup:**
    - Once Android boots, open the **Magisk** app.
    - If Magisk asks: *"Requires Additional Setup. Do you want to proceed?"*, tap **OK** (it will perform a quick 5-second reboot to finalize its environment).
+
 5. **Verify Full Root Access:**
-   Open a terminal on your computer and test `su`:
-   ```bash
-   adb shell "su -c id"
-   # Output:
-   # uid=0(root) gid=0(root) groups=0(root) context=u:r:magisk:s0
-   ```
+   From your single terminal session in `Acerone8_`, test root with:
+
+   - **Windows (Command Prompt):**
+     ```cmd
+     tools\platform-tools\adb.exe shell "su -c id"
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     .\tools\platform-tools\adb.exe shell "su -c id"
+     ```
+   - **Linux:**
+     ```bash
+     tools/platform-tools/adb shell "su -c id"
+     ```
+
    *(Grant the superuser prompt on the tablet screen if prompted).*
 
+   **Output:**
+   ```
+   uid=0(root) gid=0(root) groups=0(root) context=u:r:magisk:s0
+   ```
    - **Magisk Version:** `31.1:MAGISK:R`
    - **Root Context:** Unrestricted Magisk SELinux domain (`u:r:magisk:s0`).
+
    **Congratulations! Your tablet is now 100% rooted!**
 
 ---
@@ -333,51 +476,54 @@ The tablet's IMEI is registered to an enterprise portal (**Tectoro Pvt Ltd**). W
 ### How to permanently destroy this lock:
 
 #### Option 1: Run the Automated Script (Easiest & Recommended)
-With your tablet rooted, powered on, and connected to your PC with USB debugging enabled, simply run:
+With your tablet rooted, powered on, and connected to your PC with USB debugging enabled, run from the `Acerone8_` root folder:
 
-```bash
-./block_mdm.sh
-```
+- **Windows (Command Prompt / PowerShell):**
+  ```cmd
+  block_mdm.bat
+  ```
+
+- **Linux:**
+  ```bash
+  ./block_mdm.sh
+  ```
+
+---
 
 #### Option 2: Run Directly in Terminal via ADB
-Here is the clean, easy step-by-step guide to permanently blocking Zero-Touch enrollment and MDM on your tablet.
 
----
+##### Step 1: Open ADB Shell and Get Root
+From the `Acerone8_` root folder:
 
-### Step 1: Open ADB Shell and Get Root
-
-Connect your tablet to your PC with USB debugging enabled, open your terminal (Command Prompt or PowerShell), and elevate to root:
-
-```bash
-adb shell
-su
-
-```
-
+- **Windows (Command Prompt):**
+  ```cmd
+  tools\platform-tools\adb.exe shell
+  su
+  ```
+- **Windows (PowerShell):**
+  ```powershell
+  .\tools\platform-tools\adb.exe shell
+  su
+  ```
+- **Linux:**
+  ```bash
+  tools/platform-tools/adb shell
+  su
+  ```
 *Verification:* Your terminal prompt changes from `$` to `#`.
 
----
-
-### Step 2: Disable MDM & Zero-Touch Services
-
-Copy and paste this command block into your root shell to disable the enrollment packages:
-
+##### Step 2: Disable MDM & Zero-Touch Services
+Copy and paste this command block into your tablet root shell:
 ```bash
 pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity
 pm disable com.google.android.gms/.enterprise.zerotouch.businesslogic.ZeroTouchGmsTaskService
 pm disable com.android.managedprovisioning
 pm disable com.chipc.update
-
 ```
-
 *Verification:* Each command responds with `Package ... new state: disabled`.
 
----
-
-### Step 3: Lock Down the Zero-Touch Config File
-
-Clear out the Zero-Touch preferences file and lock it down so corporate servers can never write tokens to it again:
-
+##### Step 3: Lock Down the Zero-Touch Config File
+Clear out the Zero-Touch preferences file and make it immutable so corporate servers can never write tokens to it:
 ```bash
 if [ -f /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml ]; then
     chattr -i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
@@ -385,17 +531,10 @@ if [ -f /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml ]; t
     chmod 444 /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml
     chattr +i /data/data/com.google.android.gms/shared_prefs/zero_touch_prefs.xml 2>/dev/null
 fi
-
 ```
 
-*Verification:* The command completes silently without errors.
-
----
-
-### Step 4: Apply the Kernel Firewall
-
+##### Step 4: Apply the Kernel Firewall
 Block the Device Lock Controller app from communicating with remote servers at the network level:
-
 ```bash
 DLC_UID=$(pm list packages -U | grep com.android.devicelockcontroller | sed -n "s/.*uid://p")
 if [ -n "$DLC_UID" ]; then
@@ -403,17 +542,11 @@ if [ -n "$DLC_UID" ]; then
     ip6tables -C OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP
     echo "Firewall rules applied for UID: $DLC_UID"
 fi
-
 ```
-
 *Verification:* The terminal outputs `Firewall rules applied for UID: [number]`.
 
----
-
-### Step 5: Install the Persistent Startup Script
-
+##### Step 5: Install the Persistent Startup Script
 Create a Magisk background service so these rules and locks re-apply automatically every time your device reboots:
-
 ```bash
 mkdir -p /data/adb/service.d
 cat << "EOF" > /data/adb/service.d/block_mdm.sh
@@ -440,16 +573,14 @@ rm -f /data/system/device_owner_2.xml /data/system/device_policies.xml
 EOF
 
 chmod 755 /data/adb/service.d/block_mdm.sh
-
+exit
+exit
 ```
-
-*Verification:* Run `cat /data/adb/service.d/block_mdm.sh` to ensure the script contents display properly.
 
 ---
 
-You are completely done! You can now turn on Wi-Fi and reboot your tablet safely.
 > [!TIP]
-> **Now it is 100% safe to connect to Wi-Fi / Internet!** Your tablet is completely liberated.
+> **Now it is 100% safe to connect to Wi-Fi / Internet!** Your tablet is completely liberated and institutional MDM is permanently neutralized.
 
 ---
 
@@ -458,29 +589,59 @@ You are completely done! You can now turn on Wi-Fi and reboot your tablet safely
 Because the tablet supports **Project Treble** and **Dynamic Partitions**, you can flash pure LineageOS GSIs without compiling from source:
 
 1. Download an **ARM64 A/B GSI** (e.g. [AndyCGYan's LineageOS GSI](https://github.com/AndyCGYan/lineage_build_unified/releases) - look for `arm64_bgN` with GApps or `arm64_bvN` vanilla).
-2. Extract the file to get `system.img`.
-3. Reboot to **Fastbootd** (Userspace Fastboot):
-   ```bash
-   adb reboot fastboot
-   ```
-4. Flash system image and format:
-   ```bash
-   fastboot flash system system.img
-   fastboot -w
-   fastboot reboot
-   ```
+2. Extract the file to get `system.img` in your `Acerone8_` folder.
+3. Reboot to **Fastbootd** (Userspace Fastboot) and flash from the `Acerone8_` root folder:
+
+- **Windows (Command Prompt):**
+  ```cmd
+  tools\platform-tools\adb.exe reboot fastboot
+  tools\platform-tools\fastboot.exe flash system system.img
+  tools\platform-tools\fastboot.exe -w
+  tools\platform-tools\fastboot.exe reboot
+  ```
+
+- **Windows (PowerShell):**
+  ```powershell
+  .\tools\platform-tools\adb.exe reboot fastboot
+  .\tools\platform-tools\fastboot.exe flash system system.img
+  .\tools\platform-tools\fastboot.exe -w
+  .\tools\platform-tools\fastboot.exe reboot
+  ```
+
+- **Linux:**
+  ```bash
+  tools/platform-tools/adb reboot fastboot
+  tools/platform-tools/fastboot flash system system.img
+  tools/platform-tools/fastboot -w
+  tools/platform-tools/fastboot reboot
+  ```
 
 ---
 
 ## 🛟 Emergency Unbrick Failsafe
 
-If the device ever bootloops, restore the original untouched stock images in seconds:
+If the device ever bootloops, restore the original untouched stock images in seconds from the `Acerone8_` root folder:
 
-```bash
-fastboot flash init_boot_b tablet_backup/STOCK_ORIGINALS/init_boot_b.img
-fastboot flash boot_b tablet_backup/STOCK_ORIGINALS/boot_b.img
-fastboot reboot
-```
+- **Windows (Command Prompt):**
+  ```cmd
+  tools\platform-tools\fastboot.exe flash init_boot_b tablet_backup\STOCK_ORIGINALS\init_boot_b.img
+  tools\platform-tools\fastboot.exe flash boot_b tablet_backup\STOCK_ORIGINALS\boot_b.img
+  tools\platform-tools\fastboot.exe reboot
+  ```
+
+- **Windows (PowerShell):**
+  ```powershell
+  .\tools\platform-tools\fastboot.exe flash init_boot_b tablet_backup\STOCK_ORIGINALS\init_boot_b.img
+  .\tools\platform-tools\fastboot.exe flash boot_b tablet_backup\STOCK_ORIGINALS\boot_b.img
+  .\tools\platform-tools\fastboot.exe reboot
+  ```
+
+- **Linux:**
+  ```bash
+  tools/platform-tools/fastboot flash init_boot_b tablet_backup/STOCK_ORIGINALS/init_boot_b.img
+  tools/platform-tools/fastboot flash boot_b tablet_backup/STOCK_ORIGINALS/boot_b.img
+  tools/platform-tools/fastboot reboot
+  ```
 
 ---
 

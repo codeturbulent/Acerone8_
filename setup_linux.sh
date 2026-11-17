@@ -47,18 +47,17 @@ else
     echo "  ✓ Base commands found: python3, git"
 fi
 
-# 3. Android Platform-Tools (check or download if adb/fastboot missing)
-if ! command -v adb &>/dev/null || ! command -v fastboot &>/dev/null; then
-    if [ ! -f "tools/platform-tools/adb" ]; then
-        echo "[3/6] Downloading Android SDK Platform-Tools for Linux..."
-        curl -L -o tools/platform-tools.zip "https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
-        unzip -q -o tools/platform-tools.zip -d tools/
-        rm -f tools/platform-tools.zip
-        echo "  ✓ Platform-Tools extracted to tools/platform-tools"
-    fi
-    export PATH="$SCRIPT_DIR/tools/platform-tools:$PATH"
+# 3. Android Platform-Tools (ensure present in tools/platform-tools)
+echo "[3/6] Setting up Android SDK Platform-Tools..."
+if [ ! -f "tools/platform-tools/adb" ] || [ ! -f "tools/platform-tools/fastboot" ]; then
+    echo "  Downloading Android SDK Platform-Tools for Linux..."
+    curl -L -o tools/platform-tools.zip "https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
+    unzip -q -o tools/platform-tools.zip -d tools/
+    rm -f tools/platform-tools.zip
+    chmod +x tools/platform-tools/adb tools/platform-tools/fastboot 2>/dev/null || true
+    echo "  ✓ Platform-Tools extracted to tools/platform-tools"
 else
-    echo "[3/6] System adb and fastboot detected."
+    echo "  ✓ Platform-Tools already present in tools/platform-tools"
 fi
 
 # 4. Clone or update mtkclient

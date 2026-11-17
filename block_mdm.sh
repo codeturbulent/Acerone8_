@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+if [ -f "$SCRIPT_DIR/tools/platform-tools/adb" ]; then
+    ADB="$SCRIPT_DIR/tools/platform-tools/adb"
+elif [ -f "$SCRIPT_DIR/tools/platform-tools/adb.exe" ]; then
+    ADB="$SCRIPT_DIR/tools/platform-tools/adb.exe"
+elif command -v adb &>/dev/null; then
+    ADB="adb"
+else
+    ADB="tools/platform-tools/adb"
+fi
+
 echo "=========================================================="
 echo " 🛡️ Acer One 8 - Anti-MDM & Zero-Touch Defense Installer"
 echo "=========================================================="
 
 # 1. Check if ADB device is connected
-if ! adb get-state 1>/dev/null 2>&1; then
+if ! "$ADB" get-state 1>/dev/null 2>&1; then
     echo "❌ Error: Tablet not detected via ADB."
     echo "Please ensure USB debugging is ON and the tablet is connected."
     exit 1
@@ -14,7 +27,7 @@ fi
 
 # 2. Check for root permissions
 echo "[1/4] Verifying root privileges..."
-if ! adb shell "su -c id" 2>/dev/null | grep -q "uid=0"; then
+if ! "$ADB" shell "su -c id" 2>/dev/null | grep -q "uid=0"; then
     echo "❌ Error: Root not granted. Please open Magisk on your tablet and grant root."
     exit 1
 fi
@@ -22,7 +35,7 @@ echo "  ✓ Root confirmed (uid=0)."
 
 # 3. Neutralize active Zero-Touch components
 echo "[2/4] Neutralizing Zero-Touch activities & locking configuration..."
-adb shell "su -c '
+"$ADB" shell "su -c '
 # Disable FactoryResetActivity & background tasks in Google Play Services
 pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity >/dev/null 2>&1
 pm disable com.google.android.gms/.enterprise.zerotouch.businesslogic.ZeroTouchGmsTaskService >/dev/null 2>&1
@@ -48,7 +61,7 @@ echo "  ✓ Zero-Touch activities disabled and configuration locked."
 
 # 4. Firewall DeviceLockController UID at kernel level
 echo "[3/4] Firewalling DeviceLockController at kernel level..."
-adb shell "su -c '
+"$ADB" shell "su -c '
 DLC_UID=\$(pm list packages -U | grep com.android.devicelockcontroller | sed -n \"s/.*uid://p\")
 if [ -n \"\$DLC_UID\" ]; then
     iptables -C OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner \"\$DLC_UID\" -j DROP
@@ -59,7 +72,7 @@ echo "  ✓ Outgoing network traffic for DeviceLockController blocked."
 
 # 5. Install persistent Magisk startup boot service
 echo "[4/4] Installing persistent Magisk boot service..."
-adb shell "su -c '
+"$ADB" shell "su -c '
 cat << \"EOF\" > /data/adb/service.d/block_mdm.sh
 #!/system/bin/sh
 while [ \"\$(getprop sys.boot_completed)\" != \"1\" ]; do

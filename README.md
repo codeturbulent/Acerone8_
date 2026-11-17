@@ -207,12 +207,18 @@ If you prefer running the command directly in your terminal from the `Acerone8_`
 
 - **On Windows (Command Prompt / PowerShell):**
   ```cmd
-  tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r boot_b,init_boot_b,vbmeta_b tablet_backup\boot_b.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_b.img --skipwdt
+  tools\mtkclient\.venv\Scripts\python.exe tools\mtkclient\mtk.py r "boot_b,init_boot_b,vbmeta_b" "tablet_backup\boot_b.img,tablet_backup\init_boot_b.img,tablet_backup\vbmeta_b.img" --skipwdt
   ```
+
+> [!TIP]
+> **Why are quotes (`"..."`) required around the commas in Windows?**
+> In Windows PowerShell and CMD, commas are treated as parameter and array separators. Without quotes, PowerShell splits `boot_b,init_boot_b,vbmeta_b` into separate arguments instead of passing it as a single comma-separated string to `mtkclient`, causing syntax/argument errors.
 
 - **On Linux:**
   ```bash
-  sudo tools/mtkclient/.venv/bin/python3 tools/mtkclient/mtk.py r boot_b,init_boot_b,vbmeta_b tablet_backup/boot_b.img,tablet_backup\init_boot_b.img,tablet_backup/vbmeta_b.img --skipwdt
+  sudo tools/mtkclient/.venv/bin/python3 tools/mtkclient/mtk.py r "boot_b,init_boot_b,vbmeta_b" \
+      "tablet_backup/boot_b.img,tablet_backup/init_boot_b.img,tablet_backup/vbmeta_b.img" \
+      --skipwdt
   ```
 
 > [!IMPORTANT]

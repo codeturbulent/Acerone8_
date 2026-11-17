@@ -4,25 +4,35 @@
 [![Device](https://img.shields.io/badge/Device-Acer%20One%208%20(T4--82L--G2)-green?logo=android)](https://github.com/codeturbulent/Acerone8_)
 [![Chipset](https://img.shields.io/badge/SoC-MediaTek%20Helio%20G85%20(MT6768%2FMT6769)-orange)](https://github.com/codeturbulent/Acerone8_)
 [![Magisk](https://img.shields.io/badge/Root-Magisk%20v31.1-red?logo=magisk)](https://github.com/topjohnwu/Magisk)
+[![YouTube Video](https://img.shields.io/badge/YouTube-Video%20Guide-red?logo=youtube)](https://www.youtube.com/watch?v=vdDfN86wU0I)
 [![MDM Status](https://img.shields.io/badge/MDM%20%2F%20Zero--Touch-Permanently%20Defeated-brightgreen)](#-defeating-the-tectoro-pvt-ltd--google-zero-touch-lock)
 
 > **The definitive, tested guide to factory resetting, low-level partition dumping, fixing MTK Preloader bugs, unlocking bootloader, rooting with Magisk (GKI), bypassing institutional Zero-Touch/MDM locks ("Your device at work" / Tectoro), and flashing LineageOS GSI ROMs on the Acer One 8 (T4-82L Gen 2).**
 
 ---
 
+## 📺 Video Walkthrough
+[![Acer One 8 Root & Zero-Touch Bypass Video Guide](https://img.youtube.com/vi/vdDfN86wU0I/maxresdefault.jpg)](https://www.youtube.com/watch?v=vdDfN86wU0I)
+
+> 📹 **Watch the real-time recording and walkthrough on YouTube:**  
+> 👉 [https://www.youtube.com/watch?v=vdDfN86wU0I](https://www.youtube.com/watch?v=vdDfN86wU0I)
+
+---
+
 ## 📑 Table of Contents
-0. [Step 0: One-Click Environment Setup (Fresh PC: Windows & Linux)](#step-0-one-click-environment-setup-fresh-pc-windows--linux)
-1. [End-to-End Workflow Diagram](#-end-to-end-workflow-diagram)
-2. [Device Architecture & Profile](#-device-architecture--profile)
-3. [Key Discoveries & Low-Level Fixes](#-key-discoveries--low-level-fixes)
-4. [Step 1: Hardware Factory Reset (MediaTek Factory Mode)](#step-1-hardware-factory-reset-mediatek-factory-mode)
-5. [Step 2: Bootloader Unlock](#step-2-bootloader-unlock)
-6. [Step 3: Zero-Risk Partition Dump via mtkclient](#step-3-zero-risk-partition-dump-via-mtkclient)
-7. [Step 4: Downloading & Patching with Magisk v31+](#step-4-downloading--patching-with-magisk-v31)
-8. [Step 5: Flashing via Fastboot](#step-5-flashing-via-fastboot)
-9. [Step 6: Defeating "Your device at work" / Tectoro Zero-Touch Lock](#-defeating-the-tectoro-pvt-ltd--google-zero-touch-lock)
-10. [Step 7: Flashing LineageOS / Custom GSI ROMs](#-flashing-lineageos--custom-gsi-roms)
-11. [Emergency Unbrick Failsafe](#-emergency-unbrick-failsafe)
+0. [📺 Video Walkthrough](#-video-walkthrough)
+1. [Step 0: One-Click Environment Setup (Fresh PC: Windows & Linux)](#step-0-one-click-environment-setup-fresh-pc-windows--linux)
+2. [End-to-End Workflow Diagram](#-end-to-end-workflow-diagram)
+3. [Device Architecture & Profile](#-device-architecture--profile)
+4. [Key Discoveries & Low-Level Fixes](#-key-discoveries--low-level-fixes)
+5. [Step 1: Hardware Factory Reset (MediaTek Factory Mode)](#step-1-hardware-factory-reset-mediatek-factory-mode)
+6. [Step 2: Bootloader Unlock](#step-2-bootloader-unlock)
+7. [Step 3: Zero-Risk Partition Dump via mtkclient](#step-3-zero-risk-partition-dump-via-mtkclient)
+8. [Step 4: Downloading & Patching with Magisk v31+](#step-4-downloading--patching-with-magisk-v31)
+9. [Step 5: Flashing via Fastboot](#step-5-flashing-via-fastboot)
+10. [Step 6: Defeating "Your device at work" / Tectoro Zero-Touch Lock](#-defeating-the-tectoro-pvt-ltd--google-zero-touch-lock)
+11. [Step 7: Flashing LineageOS / Custom GSI ROMs](#-flashing-lineageos--custom-gsi-roms)
+12. [Emergency Unbrick Failsafe](#-emergency-unbrick-failsafe)
 
 ---
 
@@ -103,9 +113,9 @@ cd Acerone8_
 #### 2. Run the Automated Setup
 
 ##### 🪟 Windows Setup:
-Double-click **`setup.bat`** (or right-click **`setup.ps1`** -> **Run with PowerShell**).
+Double-click **`setup_windows.bat`** (or right-click **`setup_windows.ps1`** -> **Run with PowerShell**).
 
-> **What `setup.bat` / `setup.ps1` does automatically:**
+> **What `setup_windows.bat` / `setup_windows.ps1` does automatically:**
 > - Detects if Python or Git are missing and installs them automatically (via **winget** or **Scoop**).
 > - Downloads **Android SDK Platform-Tools** (`adb` & `fastboot`) into `tools/platform-tools/`.
 > - Downloads **Google Windows USB Drivers** into `tools/drivers/usb_driver/`.
@@ -116,9 +126,9 @@ Double-click **`setup.bat`** (or right-click **`setup.ps1`** -> **Run with Power
 ##### 🐧 Linux Setup:
 Open a terminal inside the cloned folder and run:
 ```bash
-chmod +x setup.sh && ./setup.sh
+chmod +x setup_linux.sh && ./setup_linux.sh
 ```
-> **What `setup.sh` does automatically:**
+> **What `setup_linux.sh` does automatically:**
 > - Installs missing distro packages (`python3`, `pip`, `venv`, `git`, `libusb`, `android-tools`).
 > - Downloads `mtkclient` into `tools/mtkclient/` and applies the patched `mtk_preloader.py`.
 > - Configures the Python virtual environment with `pycryptodomex` and `pyusb`.
@@ -182,10 +192,10 @@ Windows requires the **libusb-win32** driver to communicate with MediaTek device
 *Do not skip this step! Dumping your tablet's exact live partitions is your 100% guarantee against bricking.*
 
 #### Method A: 1-Click Automated Dump (Recommended)
-- **On Windows:** Double-click **`dump.bat`** (or run `.\dump.ps1` in PowerShell).
+- **On Windows:** Double-click **`dump_windows.bat`** (or run `.\dump_windows.ps1` in PowerShell).
 - **On Linux:** Open a terminal and run:
   ```bash
-  ./dump.sh
+  ./dump_linux.sh
   ```
 
 #### Method B: Manual Command Line Dump

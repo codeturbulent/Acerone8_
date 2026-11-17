@@ -207,7 +207,7 @@ if ($VerifyResult -match "OK") {
     exit 1
 }
 
-# Generate dump.bat for easy 1-click execution on Windows
+# Generate dump_windows.bat for easy 1-click execution on Windows
 $DumpBatContent = @"
 @echo off
 cd /d "%~dp0"
@@ -227,9 +227,9 @@ if exist tablet_backup\boot_b.img (
 )
 pause
 "@
-Set-Content -Path "dump.bat" -Value $DumpBatContent -Force
+Set-Content -Path "dump_windows.bat" -Value $DumpBatContent -Force
 
-# Generate dump.ps1
+# Generate dump_windows.ps1
 $DumpPs1Content = @"
 `$ScriptDir = Split-Path -Parent `$MyInvocation.MyCommand.Path
 Set-Location `$ScriptDir
@@ -247,7 +247,7 @@ if (Test-Path "tablet_backup\boot_b.img") {
     Write-Host "==========================================================" -ForegroundColor Green
 }
 "@
-Set-Content -Path "dump.ps1" -Value $DumpPs1Content -Force
+Set-Content -Path "dump_windows.ps1" -Value $DumpPs1Content -Force
 
 Write-Host "`n==================================================================" -ForegroundColor Cyan
 Write-Host "🎉 Windows Setup Complete!" -ForegroundColor Green
@@ -258,4 +258,4 @@ Write-Host "2. In Zadig, click 'Options' -> check 'List All Devices'."
 Write-Host "3. Power OFF your tablet. Hold Volume Up + Volume Down and plug in USB."
 Write-Host "4. Look for 'MediaTek PreLoader USB VCOM Port' or 'MTK USB Port' (VID: 0E8D)."
 Write-Host "5. Under the target driver, select 'libusb-win32' (or 'WinUSB') and click 'Replace Driver'."
-Write-Host "`nWhen ready, simply run 'dump.bat' (or '.\dump.ps1') to dump your live partitions!" -ForegroundColor Cyan
+Write-Host "`nWhen ready, simply run 'dump_windows.bat' (or '.\dump_windows.ps1') to dump your live partitions!" -ForegroundColor Cyan

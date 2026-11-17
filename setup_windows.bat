@@ -4,7 +4,7 @@ cd /d "%~dp0"
 echo ==================================================================
 echo  Starting Acer One 8 Automated Setup for Windows...
 echo ==================================================================
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup_windows.ps1"
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo ==============================================================

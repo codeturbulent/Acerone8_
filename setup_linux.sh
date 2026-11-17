@@ -129,8 +129,8 @@ if systemctl is-active --quiet ModemManager 2>/dev/null; then
     fi
 fi
 
-# Generate convenient dump.sh runner script
-cat << "EOF" > dump.sh
+# Generate convenient dump_linux.sh runner script
+cat << "EOF" > dump_linux.sh
 #!/usr/bin/env bash
 set -e
 cd "$(dirname "$0")"
@@ -155,11 +155,11 @@ if [ -f tablet_backup/boot_b.img ]; then
     echo "=========================================================="
 fi
 EOF
-chmod +x dump.sh
+chmod +x dump_linux.sh
 
 echo ""
 echo "=================================================================="
 echo "🎉 Linux setup is complete!"
 echo "To dump your tablet partitions, run:"
-echo "    ./dump.sh"
+echo "    ./dump_linux.sh"
 echo "=================================================================="

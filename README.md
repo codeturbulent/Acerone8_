@@ -305,19 +305,27 @@ Because the tablet supports **Project Treble** and **Dynamic Partitions**, you c
 
 ## 🛟 Emergency Unbrick Failsafe
 
-If the device ever bootloops, restore the original untouched stock images in seconds from the `Acerone8_` root folder:
+If your device ever bootloops or you need to restore 100% factory untouched state, you can download the stock partition backup package directly from GitHub Releases:
+
+👉 **[📥 Download Stock Original Partitions (Acer_One_8_Stock_Original_Partitions.zip)](https://github.com/codeturbulent/Acerone8_/releases/download/v2.0/Acer_One_8_Stock_Original_Partitions.zip)**
+
+Extract the images into `tablet_backup/STOCK_ORIGINALS/` and flash them via Fastboot:
 
 - **Windows:**
   ```cmd
+  tools\platform-tools\fastboot.exe flash init_boot_a tablet_backup\STOCK_ORIGINALS\init_boot_a.img
   tools\platform-tools\fastboot.exe flash init_boot_b tablet_backup\STOCK_ORIGINALS\init_boot_b.img
-  tools\platform-tools\fastboot.exe flash boot_b tablet_backup\STOCK_ORIGINALS\boot_b.img
+  tools\platform-tools\fastboot.exe flash boot_a tablet_backup\STOCK_ORIGINALS\boot_a.img
+  tools\platform-tools\fastboot.exe flash vbmeta_a tablet_backup\STOCK_ORIGINALS\vbmeta_a.img
   tools\platform-tools\fastboot.exe reboot
   ```
 
 - **Linux:**
   ```bash
+  tools/platform-tools/fastboot flash init_boot_a tablet_backup/STOCK_ORIGINALS/init_boot_a.img
   tools/platform-tools/fastboot flash init_boot_b tablet_backup/STOCK_ORIGINALS/init_boot_b.img
-  tools/platform-tools/fastboot flash boot_b tablet_backup/STOCK_ORIGINALS/boot_b.img
+  tools/platform-tools/fastboot flash boot_a tablet_backup/STOCK_ORIGINALS/boot_a.img
+  tools/platform-tools/fastboot flash vbmeta_a tablet_backup/STOCK_ORIGINALS/vbmeta_a.img
   tools/platform-tools/fastboot reboot
   ```
 

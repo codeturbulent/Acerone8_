@@ -31,16 +31,34 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 3. Check for root permissions
+# 3. Auto-install Magisk app if present in tablet_backup
+$MagiskApk = "tablet_backup\Magisk.apk"
+if (Test-Path $MagiskApk) {
+    Write-Host "`n[0/4] Checking Magisk App installation..." -ForegroundColor Yellow
+    & $Adb install -r $MagiskApk 2>&1 | Out-Null
+    Write-Host "  ✓ Magisk APK installed." -ForegroundColor Green
+}
+
+# 4. Check for root permissions
 Write-Host "`n[1/4] Verifying root privileges..." -ForegroundColor Yellow
 $idOut = & $Adb shell "su -c id" 2>&1
 if ($idOut -notmatch "uid=0") {
-    Write-Host "❌ Error: Root not granted. Please open Magisk on your tablet and grant root access." -ForegroundColor Red
+    Write-Host "❌ Error: Root not granted. Please open Magisk on your tablet and grant root access when prompted." -ForegroundColor Red
     exit 1
 }
 Write-Host "  ✓ Root confirmed (uid=0)." -ForegroundColor Green
 
-# 4. Neutralize Zero-Touch components
+# Helper function to run root commands cleanly via ADB without escaping errors
+function Invoke-RootCommand {
+    param([string]$ScriptContent)
+    $tempFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($tempFile, $ScriptContent.Replace("`r`n", "`n"))
+    & $Adb push $tempFile /data/local/tmp/_mdm_cmd.sh 2>&1 | Out-Null
+    Remove-Item $tempFile -Force
+    & $Adb shell "su -c 'sh /data/local/tmp/_mdm_cmd.sh; rm -f /data/local/tmp/_mdm_cmd.sh'"
+}
+
+# 5. Neutralize Zero-Touch components
 Write-Host "`n[2/4] Neutralizing Zero-Touch activities & locking configuration..." -ForegroundColor Yellow
 $cmdDisable = @'
 pm disable com.google.android.gms/.enterprise.zerotouch.ui.FactoryResetActivity >/dev/null 2>&1
@@ -57,10 +75,10 @@ pm disable com.chipc.update >/dev/null 2>&1
 pm disable-user --user 0 com.chipc.update >/dev/null 2>&1
 am force-stop com.google.android.gms >/dev/null 2>&1
 '@
-& $Adb shell "su -c '$cmdDisable'"
+Invoke-RootCommand -ScriptContent $cmdDisable
 Write-Host "  ✓ Zero-Touch activities disabled and configuration locked." -ForegroundColor Green
 
-# 5. Firewall DeviceLockController at kernel level
+# 6. Firewall DeviceLockController at kernel level
 Write-Host "`n[3/4] Firewalling DeviceLockController at kernel level..." -ForegroundColor Yellow
 $cmdFirewall = @'
 DLC_UID=$(pm list packages -U | grep com.android.devicelockcontroller | sed -n "s/.*uid://p")
@@ -69,10 +87,10 @@ if [ -n "$DLC_UID" ]; then
     ip6tables -C OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner "$DLC_UID" -j DROP
 fi
 '@
-& $Adb shell "su -c '$cmdFirewall'"
+Invoke-RootCommand -ScriptContent $cmdFirewall
 Write-Host "  ✓ Outgoing network traffic for DeviceLockController blocked." -ForegroundColor Green
 
-# 6. Install persistent Magisk startup boot service
+# 7. Install persistent Magisk startup boot service
 Write-Host "`n[4/4] Installing persistent Magisk boot service..." -ForegroundColor Yellow
 $cmdService = @'
 mkdir -p /data/adb/service.d
@@ -102,7 +120,7 @@ rm -f /data/system/device_owner_2.xml /data/system/device_policies.xml
 EOF
 chmod 755 /data/adb/service.d/block_mdm.sh
 '@
-& $Adb shell "su -c '$cmdService'"
+Invoke-RootCommand -ScriptContent $cmdService
 Write-Host "  ✓ Persistent boot service installed in /data/adb/service.d/block_mdm.sh" -ForegroundColor Green
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan

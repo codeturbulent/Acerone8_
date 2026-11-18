@@ -3,12 +3,13 @@
 venv/
 env/
 
-# Device backups and dumps
-tablet_backup/
+# Device backups and dumps (ignore large full dumps, keep prebuilt patched boot image)
+tablet_backup/*
+!tablet_backup/init_boot_patched.img
 mtkclient/
 tools/
 *.img
-*.apk
+!tablet_backup/init_boot_patched.img
 *.zip
 
 # Python caches & logs
@@ -16,3 +17,4 @@ __pycache__/
 *.pyc
 *.pyo
 *.log
+hwparam.json

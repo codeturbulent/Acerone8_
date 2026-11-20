@@ -53,9 +53,19 @@ function Invoke-RootCommand {
     param([string]$ScriptContent)
     $tempFile = [System.IO.Path]::GetTempFileName()
     [System.IO.File]::WriteAllText($tempFile, $ScriptContent.Replace("`r`n", "`n"))
-    & $Adb push $tempFile /data/local/tmp/_mdm_cmd.sh 2>&1 | Out-Null
+
+    $prevPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $Adb push $tempFile /data/local/tmp/_mdm_cmd.sh *> $null
+    $pushExit = $LASTEXITCODE
     Remove-Item $tempFile -Force
+    if ($pushExit -ne 0) {
+        $ErrorActionPreference = $prevPreference
+        throw "Failed to push temporary script to /data/local/tmp/_mdm_cmd.sh"
+    }
+
     & $Adb shell "su -c 'sh /data/local/tmp/_mdm_cmd.sh; rm -f /data/local/tmp/_mdm_cmd.sh'"
+    $ErrorActionPreference = $prevPreference
 }
 
 # 5. Neutralize Zero-Touch components

@@ -38,7 +38,12 @@ echo "  ✓ Tablet detected in Fastboot mode!"
 echo -e "\n[2/4] Unlocking Bootloader..."
 echo "  ⚠️  LOOK AT TABLET SCREEN: Press VOLUME UP to confirm unlock!"
 $FASTBOOT flashing unlock || true
-sleep 3
+echo "  Waiting for tablet to confirm unlock and re-enter Fastboot mode..."
+sleep 2
+while ! $FASTBOOT devices | grep -q "fastboot"; do
+    sleep 1
+done
+echo "  ✓ Tablet confirmed ready in Fastboot mode!"
 
 echo -e "\n[3/4] Flashing Magisk Root to init_boot partitions..."
 $FASTBOOT flash init_boot_a "$PATCHED_IMG"

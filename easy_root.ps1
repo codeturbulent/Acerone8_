@@ -46,7 +46,14 @@ Write-Host "  ⚠️  LOOK AT YOUR TABLET SCREEN NOW!" -ForegroundColor Magenta
 Write-Host "  👉 Press VOLUME UP on the tablet to confirm bootloader unlock." -ForegroundColor Magenta
 & $Fastboot flashing unlock
 Write-Host "  ✓ Bootloader unlock command sent." -ForegroundColor Green
-Start-Sleep -Seconds 3
+Write-Host "  Waiting for tablet to confirm unlock and re-enter Fastboot mode..." -ForegroundColor Gray
+Start-Sleep -Seconds 2
+$fbOut = & $Fastboot devices 2>&1
+while (-not ($fbOut -match "fastboot")) {
+    Start-Sleep -Seconds 1
+    $fbOut = & $Fastboot devices 2>&1
+}
+Write-Host "  ✓ Tablet confirmed ready in Fastboot mode!" -ForegroundColor Green
 
 # 5. Flash Patched init_boot to both slots
 Write-Host "`n[3/4] Flashing Magisk Root to init_boot partitions..." -ForegroundColor Yellow

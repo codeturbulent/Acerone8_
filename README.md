@@ -137,6 +137,14 @@ chmod +x setup_linux.sh && ./setup_linux.sh
 > [!TIP]
 > This is the fastest, easiest method for 99% of users. It uses the pre-tested, verified Magisk patched image included in `tablet_backup/init_boot_patched.img`.
 
+### Prerequisite: Factory Reset & Enable OEM Unlocking (If locked by MDM)
+If your tablet is institutional/MDM-managed or OEM unlocking is disabled:
+1. **Hardware Factory Reset:** Power OFF tablet. Hold **Power + Volume Down** to enter MediaTek Factory Mode, use Volume Down to navigate to **Clear Storage** (or Clear eMMC), and press Power to confirm.
+2. When the setup wizard appears, select **"Set up offline"** / **Skip** (**DO NOT connect to Wi-Fi**).
+3. Open **Settings > About tablet** and tap **Build number** 7 times to enable Developer options.
+4. Open **Settings > System > Developer options** and toggle **OEM unlocking** to ON (and USB debugging).
+*(If your device is already unlocked or OEM unlocking is already enabled, you can proceed directly to Step 1).*
+
 ### Step 1: Boot into Fastboot Mode
 1. Power OFF your tablet completely.
 2. Hold **Power + Volume Up** until the boot selection menu appears.
@@ -234,6 +242,17 @@ From the `Acerone8_` root folder, run:
    tools\platform-tools\fastboot.exe reboot
    ```
 
+### Step 5: Run the Anti-MDM Script
+Once the tablet boots into Android:
+1. Complete offline setup (**DO NOT connect to Wi-Fi**).
+2. Open **Settings > System > Developer options** and ensure **USB debugging** is enabled.
+3. Connect the tablet via USB and run:
+   - **Windows:** Double-click **`block_mdm.bat`**.
+   - **Linux:** Run `./block_mdm.sh`.
+4. When prompted by Magisk on the tablet, grant Superuser/root permissions.
+
+🎉 **Done! Your tablet is now permanently rooted and safe to connect to Wi-Fi!**
+
 ---
 
 ## 🛡️ Defeating the "Tectoro Pvt Ltd" / Google Zero-Touch Lock
@@ -288,6 +307,8 @@ Because the tablet supports **Project Treble** and **Dynamic Partitions**, you c
 - **Windows:**
   ```cmd
   tools\platform-tools\adb.exe reboot fastboot
+  tools\platform-tools\fastboot.exe --disable-verity --disable-verification flash vbmeta tablet_backup\STOCK_ORIGINALS\vbmeta_a.img
+  tools\platform-tools\fastboot.exe --disable-verity --disable-verification flash vbmeta_b tablet_backup\STOCK_ORIGINALS\vbmeta_b.img
   tools\platform-tools\fastboot.exe flash system system.img
   tools\platform-tools\fastboot.exe -w
   tools\platform-tools\fastboot.exe reboot
@@ -296,6 +317,8 @@ Because the tablet supports **Project Treble** and **Dynamic Partitions**, you c
 - **Linux:**
   ```bash
   tools/platform-tools/adb reboot fastboot
+  tools/platform-tools/fastboot --disable-verity --disable-verification flash vbmeta tablet_backup/STOCK_ORIGINALS/vbmeta_a.img
+  tools/platform-tools/fastboot --disable-verity --disable-verification flash vbmeta_b tablet_backup/STOCK_ORIGINALS/vbmeta_b.img
   tools/platform-tools/fastboot flash system system.img
   tools/platform-tools/fastboot -w
   tools/platform-tools/fastboot reboot
@@ -309,14 +332,16 @@ If your device ever bootloops or you need to restore 100% factory untouched stat
 
 👉 **[📥 Download Stock Original Partitions (Acer_One_8_Stock_Original_Partitions.zip)](https://github.com/codeturbulent/Acerone8_/releases/download/v2.0/Acer_One_8_Stock_Original_Partitions.zip)**
 
-Extract the images into `tablet_backup/STOCK_ORIGINALS/` and flash them via Fastboot:
+Extract the images into `tablet_backup/STOCK_ORIGINALS/` and flash them via Fastboot (both A and B slots):
 
 - **Windows:**
   ```cmd
   tools\platform-tools\fastboot.exe flash init_boot_a tablet_backup\STOCK_ORIGINALS\init_boot_a.img
   tools\platform-tools\fastboot.exe flash init_boot_b tablet_backup\STOCK_ORIGINALS\init_boot_b.img
   tools\platform-tools\fastboot.exe flash boot_a tablet_backup\STOCK_ORIGINALS\boot_a.img
+  tools\platform-tools\fastboot.exe flash boot_b tablet_backup\STOCK_ORIGINALS\boot_b.img
   tools\platform-tools\fastboot.exe flash vbmeta_a tablet_backup\STOCK_ORIGINALS\vbmeta_a.img
+  tools\platform-tools\fastboot.exe flash vbmeta_b tablet_backup\STOCK_ORIGINALS\vbmeta_b.img
   tools\platform-tools\fastboot.exe reboot
   ```
 
@@ -325,7 +350,9 @@ Extract the images into `tablet_backup/STOCK_ORIGINALS/` and flash them via Fast
   tools/platform-tools/fastboot flash init_boot_a tablet_backup/STOCK_ORIGINALS/init_boot_a.img
   tools/platform-tools/fastboot flash init_boot_b tablet_backup/STOCK_ORIGINALS/init_boot_b.img
   tools/platform-tools/fastboot flash boot_a tablet_backup/STOCK_ORIGINALS/boot_a.img
+  tools/platform-tools/fastboot flash boot_b tablet_backup/STOCK_ORIGINALS/boot_b.img
   tools/platform-tools/fastboot flash vbmeta_a tablet_backup/STOCK_ORIGINALS/vbmeta_a.img
+  tools/platform-tools/fastboot flash vbmeta_b tablet_backup/STOCK_ORIGINALS/vbmeta_b.img
   tools/platform-tools/fastboot reboot
   ```
 
